@@ -7,8 +7,8 @@ from pymediainfo import MediaInfo
 
 def get_media_info(file_path):
     """
-    Use pymediainfo to extract media tracks from the input file.
-    Returns lists for video, audio, and subtitle (text) tracks.
+    Extract media tracks using pymediainfo.
+    Returns lists for video, audio, and subtitle tracks.
     """
     media_info = MediaInfo.parse(file_path)
     video_streams = []
@@ -26,8 +26,7 @@ def get_media_info(file_path):
 
 def reorder_audio_streams(audio_streams):
     """
-    Reorder audio streams so that if an English stream exists,
-    it appears first.
+    Reorder audio streams so that English streams appear first.
     """
     english = []
     others = []
@@ -57,7 +56,7 @@ def reorder_subtitle_streams(subtitle_streams):
 
 def parse_bitrate(bitrate_str):
     """
-    Parse bitrate string like '1500k' into an integer (bps).
+    Convert bitrate string like '1500k' into an integer (in bps).
     """
     if bitrate_str.endswith('k'):
         return int(bitrate_str[:-1]) * 1000
@@ -66,7 +65,7 @@ def parse_bitrate(bitrate_str):
 
 def compute_resolution(primary_video, target_vertical, default_resolution):
     """
-    Compute the horizontal resolution while preserving the source's aspect ratio.
+    Compute horizontal resolution preserving the aspect ratio.
     Do not upscale: if the source's vertical resolution is lower than the target,
     return the native resolution.
     """
@@ -74,11 +73,9 @@ def compute_resolution(primary_video, target_vertical, default_resolution):
         orig_width = int(primary_video.width)
         orig_height = int(primary_video.height)
         if orig_height < target_vertical:
-            # Do not upscale; use the original resolution.
             return f"{orig_width}x{orig_height}"
         aspect_ratio = orig_width / orig_height
         new_width = round(aspect_ratio * target_vertical)
-        # Ensure width is even.
         if new_width % 2 != 0:
             new_width += 1
         return f"{new_width}x{target_vertical}"
@@ -88,10 +85,13 @@ def compute_resolution(primary_video, target_vertical, default_resolution):
 
 def construct_ffmpeg_command(input_file, output_file, profile, audio_streams, subtitle_files, primary_video):
     """
-    Build an ffmpeg command for transcoding the media file based on the chosen profile,
-    taking into account the input video’s native resolution, bitrate, and codec.
+    Build an ffmpeg command for transcoding based on:
+     - Desired output profile and target vertical resolution.
+     - Codec decisions: 480p/720p/1080p use H.264, 4K uses HEVC.
+     - For 4K, if the input is 10-bit then use a HEVC profile supporting 10-bit.
+     - Avoid upscaling and re-encode only if necessary.
     """
-    # Define profile-specific target vertical resolutions and bitrate settings.
+    # Define target parameters per profile.
     if profile == '480p':
         target_vertical = 480
         default_resolution = '854x480'
@@ -109,11 +109,12 @@ def construct_ffmpeg_command(input_file, output_file, profile, audio_streams, su
         default_resolution = '1920x1080'
         video_bitrate = '15000k'
         maxrate = '15000k'
+        # Use 6 channels if any audio stream indicates 5.1, else fallback to 2.
         default_audio_channels = 6 if any(
             getattr(a, 'channel_s', 2) >= 6 for a in audio_streams if hasattr(a, 'channel_s')
         ) else 2
     elif profile == '4K':
-        target_vertical = 2160  # UHD vertical resolution
+        target_vertical = 2160  # UHD vertical resolution (2160p)
         default_resolution = '3840x2160'
         video_bitrate = '35000k'
         maxrate = '35000k'
@@ -122,31 +123,47 @@ def construct_ffmpeg_command(input_file, output_file, profile, audio_streams, su
         ) else 2
     else:
         raise ValueError("Unknown profile specified")
-    
-    # Decide on the final video resolution.
+
+    # Decide on desired codec.
+    # For 4K, we want to use HEVC; for other profiles, use H.264.
+    if profile == '4K':
+        desired_codec = 'hevc'
+    else:
+        desired_codec = 'h264'
+
+    # Compute the final resolution.
     resolution = compute_resolution(primary_video, target_vertical, default_resolution)
 
-    # Determine if video transcoding is needed.
-    # Conditions for direct copy:
-    #   1. Input video codec is H.264.
-    #   2. Input bitrate is available and is <= profile target bitrate.
-    #   3. No scaling is needed (i.e. input vertical resolution is <= target_vertical).
-    transcode_video = True  # default to transcoding
+    # Determine if input is 10-bit (if available).
+    is_10bit = False
+    try:
+        bit_depth = int(primary_video.bit_depth)
+        if bit_depth >= 10:
+            is_10bit = True
+    except (ValueError, TypeError, AttributeError):
+        pass
+
+    # Decide whether to re-encode the video stream.
+    transcode_video = True
     try:
         input_codec = (primary_video.format or "").lower()
         input_bitrate = int(primary_video.bit_rate) if primary_video.bit_rate else None
         native_height = int(primary_video.height)
         target_bitrate_val = parse_bitrate(video_bitrate)
-        if native_height <= target_vertical and "avc" in input_codec or "h264" in input_codec:
-            if input_bitrate is not None and input_bitrate <= target_bitrate_val:
-                transcode_video = False
+        if native_height <= target_vertical:
+            if desired_codec == 'h264' and ("avc" in input_codec or "h264" in input_codec):
+                if input_bitrate is not None and input_bitrate <= target_bitrate_val:
+                    transcode_video = False
+            elif desired_codec == 'hevc' and ("hevc" in input_codec or "h265" in input_codec):
+                if input_bitrate is not None and input_bitrate <= target_bitrate_val:
+                    transcode_video = False
     except (ValueError, TypeError, AttributeError):
         pass
 
     # Begin constructing the ffmpeg command.
     cmd = ['ffmpeg', '-y', '-i', input_file]
 
-    # Add external subtitle files if specified.
+    # Add external subtitle files if provided.
     if subtitle_files:
         for sub in subtitle_files:
             if os.path.exists(sub):
@@ -154,39 +171,45 @@ def construct_ffmpeg_command(input_file, output_file, profile, audio_streams, su
             else:
                 print(f"Warning: Subtitle file {sub} not found.")
 
-    # Map primary video stream (assumed input index 0).
+    # Map the primary video stream.
     cmd.extend(['-map', '0:v:0'])
-    # Map audio streams (reordered so English is first).
+    # Map audio streams (with English streams reordered).
     for idx in range(len(audio_streams)):
         cmd.extend(['-map', f'0:a:{idx}'])
-    # If no external subtitles, map internal subtitles.
+    # Map internal subtitles if no external files are provided.
     if not subtitle_files:
         internal_subs = reorder_subtitle_streams([])
         for idx in range(len(internal_subs)):
             cmd.extend(['-map', f'0:s:{idx}'])
 
-    # Video options: decide whether to copy or transcode.
+    # Video encoding options.
     if transcode_video:
-        # Use libx264 with scaling if needed.
-        video_options = [
-            '-c:v', 'libx264',
-            '-b:v', video_bitrate,
-            '-maxrate', maxrate,
-            '-vf', f'scale={resolution}',
-            '-r', '24'
-        ]
+        if desired_codec == 'h264':
+            # Use libx264.
+            video_options = ['-c:v', 'libx264', '-b:v', video_bitrate, '-maxrate', maxrate,
+                             '-vf', f'scale={resolution}', '-r', '24']
+            # For 1080p, set the high profile.
+            if profile == '1080p':
+                video_options.extend(['-profile:v', 'high'])
+            # Optionally, for 480p and 720p you might choose 'main' or 'baseline'.
+        elif desired_codec == 'hevc':
+            # Use libx265.
+            video_options = ['-c:v', 'libx265', '-b:v', video_bitrate, '-maxrate', maxrate,
+                             '-vf', f'scale={resolution}', '-r', '24']
+            # Choose the appropriate HEVC profile.
+            if is_10bit:
+                video_options.extend(['-profile:v', 'main10'])
+            else:
+                video_options.extend(['-profile:v', 'main'])
     else:
-        # Copy the video stream as-is.
+        # If conditions are met, copy the video stream.
         video_options = ['-c:v', 'copy']
     cmd.extend(video_options)
 
-    # Audio encoding options (always re-encode audio to ensure proper channels).
-    cmd.extend([
-        '-c:a', 'aac',
-        '-ac', str(default_audio_channels)
-    ])
+    # Audio encoding: always re-encode audio to ensure proper channel count.
+    cmd.extend(['-c:a', 'aac', '-ac', str(default_audio_channels)])
 
-    # Handle subtitle streams if external files were provided.
+    # Handle subtitles if external files are provided.
     if subtitle_files:
         for sub_index in range(len(subtitle_files)):
             # External subtitle inputs start at index 1.
@@ -197,10 +220,9 @@ def construct_ffmpeg_command(input_file, output_file, profile, audio_streams, su
     cmd.append(output_file)
     return cmd
 
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Canonicalize media file to a standard MP4 format with specific profiles, form factor adjustments, and conditional video copying."
+        description="Canonicalize media file to a standard MP4 format with profile-based codec and resolution handling."
     )
     parser.add_argument("input", help="Input media file")
     parser.add_argument("output", help="Output media file")
@@ -213,12 +235,12 @@ def main():
     parser.add_argument(
         "--subtitle-files",
         nargs="*",
-        help="Optional subtitle files to include if internal subtitles are missing"
+        help="Optional subtitle files if internal subtitles are missing"
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Optional dry run which only prints the transcoder call and doesn't run anything"
+        help="Specify whether to run or just report the ffmpeg command."
     )
     args = parser.parse_args()
 
@@ -226,19 +248,20 @@ def main():
     video_streams, audio_streams, subtitle_streams = get_media_info(args.input)
     print(f"Found {len(video_streams)} video stream(s), {len(audio_streams)} audio stream(s), and {len(subtitle_streams)} subtitle stream(s).")
 
-    # Reorder audio streams so English comes first.
+    ic(video_streams, audio_streams, subtitle_streams)
+
+    # Reorder audio streams so that English appears first.
     audio_streams = reorder_audio_streams(audio_streams)
 
-    # Use the primary video stream for form factor and bitrate decisions.
+    # Use the primary video stream for resolution, bitrate, and codec decisions.
     primary_video = video_streams[0] if video_streams else None
-
     if primary_video is None:
         print("Error: No video stream found in the input file.")
         return
 
     # Build and display the ffmpeg command.
     ffmpeg_cmd = construct_ffmpeg_command(args.input, args.output, args.profile, audio_streams, args.subtitle_files, primary_video)
-    if not args.dry_run:
+    if args.dry_run:
         print("Would run ffmpeg command:")
     else:
         print("Running ffmpeg command:")
@@ -250,4 +273,6 @@ def main():
 
 
 if __name__ == "__main__":
+    from mk_ic import install
+    install()
     main()
