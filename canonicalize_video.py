@@ -3,6 +3,147 @@ import argparse
 import subprocess
 import os
 from pymediainfo import MediaInfo
+from av_info import dump_container_data
+
+
+class MediaContainer:
+    def __init__(self, filepath):
+
+
+
+class SessionData:
+    def __init__(self, mediainfo, avformat):
+        self.mediainfo = mediainfo
+        self.avformat = avformat
+
+
+class VideoStream:
+    def __init__(self, mediainfo_track=None, external_info=None):
+        """
+        Initialize a VideoStream from a pymediainfo track or an external info dict.
+        Expected attributes:
+          - width, height: resolution dimensions.
+          - frame_rate: frames per second.
+          - codec: encoding format.
+          - profile: encoding profile.
+          - level: encoding level.
+          - bit_rate: video bitrate.
+          - bit_depth: color bit depth.
+        """
+        if mediainfo_track:
+            self.video_stream
+            self.width = int(mediainfo_track.width) if hasattr(mediainfo_track, 'width') and mediainfo_track.width else None
+            self.height = int(mediainfo_track.height) if hasattr(mediainfo_track, 'height') and mediainfo_track.height else None
+            self.frame_rate = float(mediainfo_track.frame_rate) if hasattr(mediainfo_track, 'frame_rate') and mediainfo_track.frame_rate else None
+            self.codec = mediainfo_track.format if hasattr(mediainfo_track, 'format') else None
+            self.profile = mediainfo_track.format_profile if hasattr(mediainfo_track, 'format_profile') else None
+            self.level = mediainfo_track.level if hasattr(mediainfo_track, 'level') else None
+            self.bit_rate = int(mediainfo_track.bit_rate) if hasattr(mediainfo_track, 'bit_rate') and mediainfo_track.bit_rate else None
+            self.bit_depth = int(mediainfo_track.bit_depth) if hasattr(mediainfo_track, 'bit_depth') and mediainfo_track.bit_depth else None
+        elif external_info:
+            self.width = external_info.get('width')
+            self.height = external_info.get('height')
+            self.frame_rate = external_info.get('frame_rate')
+            self.codec = external_info.get('codec')
+            self.profile = external_info.get('profile')
+            self.level = external_info.get('level')
+            self.bit_rate = external_info.get('bit_rate')
+            self.bit_depth = external_info.get('bit_depth')
+        else:
+            raise ValueError("Either mediainfo_track or external_info must be provided.")
+
+    def resolution(self):
+        """Return resolution as a formatted string, e.g., '1920x1080'."""
+        if self.width and self.height:
+            return f"{self.width}x{self.height}"
+        return None
+
+    def __str__(self):
+        return (f"VideoStream(resolution={self.resolution()}, frame_rate={self.frame_rate}, "
+                f"codec={self.codec}, profile={self.profile}, level={self.level}, "
+                f"bit_rate={self.bit_rate}, bit_depth={self.bit_depth})")
+
+
+class AudioStream:
+    def __init__(self, mediainfo_track=None, external_info=None):
+        """
+        Initialize an AudioStream from a pymediainfo track or an external info dict.
+        Expected attributes:
+          - channels: number of audio channels.
+          - codec: audio encoding format.
+          - language: language descriptor.
+        """
+        if mediainfo_track:
+            self.channels = int(mediainfo_track.channel_s) if hasattr(mediainfo_track, 'channel_s') and mediainfo_track.channel_s else None
+            self.codec = mediainfo_track.format if hasattr(mediainfo_track, 'format') else None
+            self.language = mediainfo_track.language if hasattr(mediainfo_track, 'language') else None
+        elif external_info:
+            self.channels = external_info.get('channels')
+            self.codec = external_info.get('codec')
+            self.language = external_info.get('language')
+        else:
+            raise ValueError("Either mediainfo_track or external_info must be provided.")
+
+    def __str__(self):
+        return f"AudioStream(language={self.language}, codec={self.codec}, channels={self.channels})"
+
+
+class SubtitleStream:
+    def __init__(self, mediainfo_track=None, external_info=None):
+        """
+        Initialize a SubtitleStream from a pymediainfo track or an external info dict.
+        Expected attributes:
+          - language: subtitle language.
+          - format: subtitle format (e.g., 'SRT', 'ASS').
+        """
+        if mediainfo_track:
+            self.language = mediainfo_track.language if hasattr(mediainfo_track, 'language') else None
+            self.format = mediainfo_track.format if hasattr(mediainfo_track, 'format') else None
+        elif external_info:
+            self.language = external_info.get('language')
+            self.format = external_info.get('format')
+        else:
+            raise ValueError("Either mediainfo_track or external_info must be provided.")
+
+    def __str__(self):
+        return f"SubtitleStream(language={self.language}, format={self.format})"
+
+
+# Example usage:
+if __name__ == "__main__":
+    # Simulate a mediainfo track for video
+    class DummyTrack:
+        pass
+
+    dummy_video = DummyTrack()
+    dummy_video.width = "1920"
+    dummy_video.height = "1080"
+    dummy_video.frame_rate = "24"
+    dummy_video.format = "AVC"
+    dummy_video.format_profile = "High"
+    dummy_video.level = "4.1"
+    dummy_video.bit_rate = "5000000"
+    dummy_video.bit_depth = "8"
+
+    video_stream = VideoStream(mediainfo_track=dummy_video)
+    print(video_stream)
+
+    # Simulate a mediainfo track for audio.
+    dummy_audio = DummyTrack()
+    dummy_audio.channel_s = "2"
+    dummy_audio.format = "AAC"
+    dummy_audio.language = "eng"
+    audio_stream = AudioStream(mediainfo_track=dummy_audio)
+    print(audio_stream)
+
+    # Simulate an external subtitle file information.
+    ext_sub_info = {
+        "language": "eng",
+        "format": "SRT"
+    }
+    subtitle_stream = SubtitleStream(external_info=ext_sub_info)
+    print(subtitle_stream)
+
 
 
 def get_media_info(file_path):
@@ -235,7 +376,7 @@ def main():
     parser.add_argument(
         "--subtitle-files",
         nargs="*",
-        help="Optional subtitle files if internal subtitles are missing"
+        help="Optional subtitle files"
     )
     parser.add_argument(
         "--dry-run",
