@@ -4,7 +4,7 @@ extern "C" {
 #include <Python.h>
 
 
-static PyObject* dump_container_data(PyObject* self, PyObject* input_file) {
+static PyObject* ffmpeg(PyObject* self, PyObject* input_file) {
     // Check that the input file is a string.
     if (!PyUnicode_Check(input_file)) {
       PyErr_SetString(PyExc_TypeError, "Input file must be a string.");
@@ -103,10 +103,25 @@ static PyObject* dump_container_data(PyObject* self, PyObject* input_file) {
             return NULL;
         }
         if (codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-            if (!add_int_to_dict("bit_rate", codecpar->bit_rate)) {
+            int64_t bit_rate = codecpar->bit_rate;
+            if (bit_rate == 0) {
+                // Calculate bitrate from frame size and duration
+                if (stream->duration > 0) {
+                    int64_t file_size = fmt_ctx->pb ? avio_size(fmt_ctx->pb) : 0;
+                    if (file_size > 0) {
+                        // duration is in AV_TIME_BASE (microseconds); convert to seconds
+                        double duration_sec = stream->duration * av_q2d(stream->time_base);
+                        bit_rate = (int64_t)((file_size * 8) / duration_sec);
+                    }
+                }
+            }
+            if (!add_int_to_dict("bit_rate", bit_rate)) {
                 return NULL;
             }
             if (!add_int_to_dict("profile", codecpar->profile)) {
+                return NULL;
+            }
+            if (!add_str_to_dict("profile_name", avcodec_profile_name(codecpar->codec_id, codecpar->profile))) {
                 return NULL;
             }
             if (!add_int_to_dict("level", codecpar->level)) {
@@ -142,26 +157,26 @@ static PyObject* dump_container_data(PyObject* self, PyObject* input_file) {
 }
 
 // Define the module's method table.
-static PyMethodDef av_info_methods[] = {
-    {"dump_container_data", dump_container_data, METH_O, "Return a dictionary with a streams list."},
+static PyMethodDef ffmpeg_methods[] = {
+    {"ffmpeg", ffmpeg, METH_O, "Return a dictionary with container information produced by ffmpeg"},
     {NULL, NULL, 0, NULL}
 };
 
 // Define the module.
-static struct PyModuleDef av_info_module = {
+static struct PyModuleDef ffmpeg_module = {
     PyModuleDef_HEAD_INIT,
-    "av_info",                   // Module name.
-    "Module that dumps av container data", // Module documentation.
+    "_ffmpeg",                   // Module name.
+    "Module that dumps av container data using ffmpeg", // Module documentation.
     -1,                           // Size of per-interpreter state of the module.
-    av_info_methods
+    ffmpeg_methods
 };
 
 
 extern "C" {
 
 // Module initialization function.
-PyMODINIT_FUNC PyInit_av_info(void) {
-    return PyModule_Create(&av_info_module);
+PyMODINIT_FUNC PyInit__ffmpeg(void) {
+    return PyModule_Create(&ffmpeg_module);
 }
 
 }

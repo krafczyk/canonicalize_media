@@ -1,4 +1,4 @@
-from setuptools import setup, Extension
+from setuptools import setup, Extension, find_packages
 import subprocess
 
 def pkg_config(library, flag):
@@ -44,8 +44,8 @@ libraries = (
 
 # Define the extension module.
 module = Extension(
-    'av_info',
-    sources=['avformat_interface.cpp'],  # your C++ source file
+    'av_info._ffmpeg',
+    sources=['src/ffmpeg.cpp'],  # your C++ source file
     language='c++',
     include_dirs=include_dirs,
     library_dirs=library_dirs,
@@ -57,4 +57,5 @@ setup(
     version="1.0",
     description="A Python extension module for FFmpeg interfacing built with setuptools.",
     ext_modules=[module],
+    packages=find_packages(),
 )
