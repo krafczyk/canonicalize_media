@@ -1,24 +1,24 @@
 from setuptools import setup, Extension, find_packages
 import subprocess
 
-def pkg_config(library, flag):
+def pkg_config(library: str, flag: str) -> list[str]:
     try:
         output = subprocess.check_output(["pkg-config", flag, library])
         return output.decode().split()
     except subprocess.CalledProcessError:
         return []
 
-def get_include_dirs(library):
+def get_include_dirs(library: str) -> list[str]:
     # Get flags like "-I/usr/include/ffmpeg" and strip off the "-I"
     flags = pkg_config(library, '--cflags-only-I')
     return [flag[2:] for flag in flags if flag.startswith('-I')]
 
-def get_library_dirs(library):
+def get_library_dirs(library: str) -> list[str]:
     # Get flags like "-L/usr/lib" and strip off the "-L"
     flags = pkg_config(library, '--libs-only-L')
     return [flag[2:] for flag in flags if flag.startswith('-L')]
 
-def get_libraries(library):
+def get_libraries(library: str) -> list[str]:
     # Get flags like "-lavformat" and strip off the "-l"
     flags = pkg_config(library, '--libs-only-l')
     return [flag[2:] for flag in flags if flag.startswith('-l')]
@@ -52,7 +52,7 @@ module = Extension(
     libraries=libraries,
 )
 
-setup(
+_ = setup(
     name="av_info",
     version="1.0",
     description="A Python extension module for FFmpeg interfacing built with setuptools.",
