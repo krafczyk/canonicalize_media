@@ -2,6 +2,7 @@ from av_info.mediainfo import mediainfo, MediaInfo
 from av_info._ffmpeg import ffmpeg
 from dataclasses import dataclass
 from pprint import pprint
+from typing import override
 
 
 @dataclass
@@ -21,6 +22,7 @@ class VideoStream:
     chroma_subsampling: str
     hdr_format: tuple[str, str, str] | None
 
+    @override
     def __str__(self):
         return f"{self.filepath},{self.idx}: {self.codec}@L{self.level}@{self.profile} {self.bit_rate} {self.bit_depth} {self.frame_rate} {self.width}x{self.height} {self.aspect_ratio} {self.color_space} {self.chroma_subsampling} HDR: {self.hdr_format}"
 
@@ -35,6 +37,7 @@ class AudioStream:
     language: str
     title: str
 
+    @override
     def __str__(self):
         return f"{self.filepath},{self.idx}: {self.codec} {self.channels} {self.bit_rate} {self.language} {self.title}"
 
@@ -47,6 +50,7 @@ class TextStream:
     language: str
     title: str
 
+    @override
     def __str__(self):
         return f"{self.filepath},{self.idx}: {self.codec} {self.language} {self.title}"
 
