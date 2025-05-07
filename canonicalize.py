@@ -14,5 +14,7 @@ if __name__ == "__main__":
 
     for i in args.input:
         file_cont = MediaContainer(i)
-        pprint(file_cont.ffmpeg)
+        #pprint(file_cont.ffmpeg)
         pprint(file_cont.mediainfo)
+
+        #file_cont.analyze()
