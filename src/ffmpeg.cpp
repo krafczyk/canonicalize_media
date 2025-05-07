@@ -1,5 +1,6 @@
 extern "C" {
 #include <libavformat/avformat.h>
+#include <libavutil/dict.h> // for av_dict_get
 }
 #include <Python.h>
 
@@ -52,8 +53,8 @@ static PyObject* ffmpeg(PyObject* self, PyObject* input_file) {
     for (unsigned int i = 0; i < fmt_ctx->nb_streams; i++) {
         AVStream *stream = fmt_ctx->streams[i];
         AVCodecParameters *codecpar = stream->codecpar;
-        // Initialize dict for stream
         PyObject* stream_dict = PyDict_New();
+
         if (!stream_dict) {
             PyErr_SetString(PyExc_RuntimeError, "Issue creating new dict for a stream");
             Py_DECREF(result);
@@ -92,16 +93,11 @@ static PyObject* ffmpeg(PyObject* self, PyObject* input_file) {
             return true;
         };
 
-        if (!add_int_to_dict("index", i)) {
-            return NULL;
-        }
+        // Common fields
+        if (!add_int_to_dict("index", i))  return NULL;
+        if (!add_str_to_dict("type", av_get_media_type_string(codecpar->codec_type))) return NULL;
+        if (!add_str_to_dict("codec", avcodec_get_name(codecpar->codec_id))) return NULL;
 
-        if (!add_str_to_dict("type", av_get_media_type_string(codecpar->codec_type))) {
-            return NULL;
-        }
-        if (!add_str_to_dict("codec", avcodec_get_name(codecpar->codec_id))) {
-            return NULL;
-        }
         if (codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
             int64_t bit_rate = codecpar->bit_rate;
             if (bit_rate == 0) {
@@ -137,6 +133,27 @@ static PyObject* ffmpeg(PyObject* self, PyObject* input_file) {
             if (!add_int_to_dict("bit_rate", codecpar->bit_rate)) {
                 return NULL;
             }
+        } else if (codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+            // pull out language tag (e.g. "eng", "fra"), default to "und"
+            AVDictionaryEntry *lang_tag = av_dict_get(stream->metadata, "language", NULL, 0);
+            const char* lang = lang_tag ? lang_tag->value : "und";
+            if (!add_str_to_dict("language", lang)) return NULL;
+
+            // title
+            AVDictionaryEntry *ttl = av_dict_get(stream->metadata, "title", nullptr, 0);
+            const char *title = ttl ? ttl->value : "";
+            if (!add_str_to_dict("title", title)) return NULL;
+
+            // format (FourCC from codec_tag)
+            uint32_t tag = codecpar->codec_tag;
+            char fmt[5] = {
+                char( tag        & 0xFF),
+                char((tag >>  8) & 0xFF),
+                char((tag >> 16) & 0xFF),
+                char((tag >> 24) & 0xFF),
+                '\0'
+            };
+            if (!add_str_to_dict("format", fmt)) return NULL;
         }
 
         if (PyList_Append(streams_list, stream_dict) == -1) {

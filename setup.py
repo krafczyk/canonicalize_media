@@ -25,21 +25,21 @@ def get_libraries(library: str) -> list[str]:
 
 # Get the FFmpeg configuration from pkg-config for libavformat, libavcodec, and libavutil.
 include_dirs = (
-    get_include_dirs("libavformat")# +
+    get_include_dirs("libavformat") +
+    get_include_dirs("libavutil")
     #get_include_dirs("libavcodec") +
-    #get_include_dirs("libavutil")
 )
 
 library_dirs = (
-    get_library_dirs("libavformat")# +
+    get_library_dirs("libavformat") +
+    get_library_dirs("libavutil")
     #get_library_dirs("libavcodec") +
-    #get_library_dirs("libavutil")
 )
 
 libraries = (
-    get_libraries("libavformat")# +
+    get_libraries("libavformat") +
+    get_libraries("libavutil")
     #get_libraries("libavcodec") +
-    #get_libraries("libavutil")
 )
 
 # Define the extension module.

@@ -1,5 +1,5 @@
 from av_info.mediainfo import mediainfo, MediaInfo
-from av_info._ffmpeg import ffmpeg
+from av_info._ffmpeg import ffmpeg, FFmpegInfo, VideoStreamInfo, AudioStreamInfo
 from dataclasses import dataclass
 from pprint import pprint
 from typing import override
@@ -55,7 +55,7 @@ class TextStream:
         return f"{self.filepath},{self.idx}: {self.codec} {self.language} {self.title}"
 
 
-def get_ffmpeg_streams(ffmpeg_data):
+def get_ffmpeg_streams(ffmpeg_data: FFmpegInfo):
     streams = {'video': [], 'audio': [], 'subtitle': []}
     for stream in ffmpeg_data['streams']:
         if stream['type'] == 'video':
@@ -87,16 +87,20 @@ def get_mediainfo_streams(mediainfo_data):
 
 
 class MediaContainer:
+    filepath: str
     mediainfo: MediaInfo
+    ffmpeg: FFmpegInfo
+    video: list[VideoStreamInfo]
+    audio: list[AudioStreamInfo]
 
-    def __init__(self, filepath):
+    def __init__(self, filepath: str):
         self.filepath = filepath
         self.ffmpeg = ffmpeg(filepath)
         self.mediainfo = mediainfo(filepath)
 
         self.video = []
         self.audio = []
-        self.subtitle = []
+        #self.subtitle = []
 
 
     def analyze(self):

@@ -19,8 +19,13 @@ class VideoStreamInfo(StreamInfoBase, total=False):
 class AudioStreamInfo(StreamInfoBase, total=False):
     bit_rate: int
 
+class SubtitleStreamInfo(StreamInfoBase, total=False):
+    language: str
+    title: str
+    format: str
+
 # A union covers either kind of stream
-StreamInfo = VideoStreamInfo|AudioStreamInfo
+StreamInfo = VideoStreamInfo|AudioStreamInfo|SubtitleStreamInfo
 
 # The top-level dict you return
 class FFmpegInfo(TypedDict):
