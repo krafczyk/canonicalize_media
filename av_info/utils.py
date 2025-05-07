@@ -2,7 +2,7 @@ import subprocess
 import json
 
 
-def get_h264_level_name(level):
+def get_h264_level_name(level: int) -> str:
     """Return the H.264 level name for a given numeric level value."""
     mapping = {
         10: "1.0",
@@ -25,7 +25,7 @@ def get_h264_level_name(level):
     return mapping.get(level, "unknown")
 
 
-def get_hevc_level_name(level):
+def get_hevc_level_name(level:int) -> str:
     """Return the HEVC level name for a given numeric level value."""
     mapping = {
         30:  "1",
@@ -43,13 +43,3 @@ def get_hevc_level_name(level):
         186: "6.2"
     }
     return mapping.get(level, "unknown")
-
-
-def mediainfo(filepath):
-    # Get output from the mediainfo command-line tool
-    try:
-        output = subprocess.check_output(["mediainfo", "--Output=JSON", filepath])
-        return json.loads(output)
-    except ChildProcessError as e:
-        print(e)
-        return None

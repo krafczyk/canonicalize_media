@@ -1,3 +1,4 @@
 pyav
+pydantic
 pymediainfo
 setuptools

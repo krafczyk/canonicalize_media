@@ -1,5 +1,7 @@
-from av_info import ffmpeg, mediainfo
+from av_info.mediainfo import mediainfo, MediaInfo
+from av_info._ffmpeg import ffmpeg
 from dataclasses import dataclass
+from pprint import pprint
 
 
 @dataclass
