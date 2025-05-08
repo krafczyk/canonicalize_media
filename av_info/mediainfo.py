@@ -44,13 +44,13 @@ class Video(BaseModel):
     Format_Profile: str
     Format_Level: int
     Format_Tier: str
-    HDR_Format: str
-    HDR_Format_Version: str
-    HDR_Format_Profile: str
-    HDR_Format_Level: str
-    HDR_Format_Settings: str
-    HDR_Format_Compression: str
-    HDR_Format_Compatibility: str
+    HDR_Format: str|None
+    HDR_Format_Version: str|None
+    HDR_Format_Profile: str|None
+    HDR_Format_Level: str|None
+    HDR_Format_Settings: str|None
+    HDR_Format_Compression: str|None
+    HDR_Format_Compatibility: str|None
     CodecID: str
     Duration: float
     BitRate: int

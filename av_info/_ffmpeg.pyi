@@ -1,13 +1,13 @@
-from typing import TypedDict
+from typing import TypedDict, Literal, Required
 
 # Base for the always-present fields
 class StreamInfoBase(TypedDict):
     index: int
-    type: str
     codec: str
 
 # Video streams get these extra fields
 class VideoStreamInfo(StreamInfoBase, total=False):
+    type: Required[Literal["video"]]
     bit_rate: int
     profile: int
     profile_name: str
@@ -17,9 +17,12 @@ class VideoStreamInfo(StreamInfoBase, total=False):
 
 # Audio streams only get bit_rate (beyond the base)
 class AudioStreamInfo(StreamInfoBase, total=False):
+    type: Required[Literal["audio"]]
     bit_rate: int
+    title: Required[str | None]
 
 class SubtitleStreamInfo(StreamInfoBase, total=False):
+    type: Required[Literal["subtitle"]]
     language: str
     title: str
     format: str

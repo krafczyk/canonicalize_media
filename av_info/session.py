@@ -1,8 +1,8 @@
-from av_info.mediainfo import mediainfo, MediaInfo
-from av_info._ffmpeg import ffmpeg, FFmpegInfo, VideoStreamInfo, AudioStreamInfo
+from av_info.mediainfo import mediainfo, MediaInfo, Video, Audio, Text, Menu, General
+from av_info._ffmpeg import ffmpeg, FFmpegInfo, VideoStreamInfo, AudioStreamInfo, SubtitleStreamInfo
 from dataclasses import dataclass
 from pprint import pprint
-from typing import override
+from typing import override, TypedDict
 
 
 @dataclass
@@ -35,7 +35,7 @@ class AudioStream:
     channels: int
     bit_rate: float
     language: str
-    title: str
+    title: str | None
 
     @override
     def __str__(self):
@@ -55,8 +55,14 @@ class TextStream:
         return f"{self.filepath},{self.idx}: {self.codec} {self.language} {self.title}"
 
 
-def get_ffmpeg_streams(ffmpeg_data: FFmpegInfo):
-    streams = {'video': [], 'audio': [], 'subtitle': []}
+class FFmpegStreams(TypedDict):
+    video: list[VideoStreamInfo]
+    audio: list[AudioStreamInfo]
+    subtitle: list[SubtitleStreamInfo]
+
+
+def get_ffmpeg_streams(ffmpeg_data: FFmpegInfo) -> FFmpegStreams:
+    streams: FFmpegStreams = {'video': [], 'audio': [], 'subtitle': []}
     for stream in ffmpeg_data['streams']:
         if stream['type'] == 'video':
             streams['video'].append(stream)
@@ -69,20 +75,32 @@ def get_ffmpeg_streams(ffmpeg_data: FFmpegInfo):
     return streams
 
 
-def get_mediainfo_streams(mediainfo_data):
-    streams = {'video': [], 'audio': [], 'subtitle': []}
-    tracks = mediainfo_data['media']['track']
+class MediaInfoStreams(TypedDict):
+    video: list[Video]
+    audio: list[Audio]
+    subtitle: list[Text]
+    menu: list[Menu]
+
+
+def get_mediainfo_streams(mediainfo_data: MediaInfo) -> MediaInfoStreams:
+    streams: MediaInfoStreams = {'video': [], 'audio': [], 'subtitle': [], 'menu': []}
+    tracks = mediainfo_data.media.track
     for track in tracks[1:]:
-        if track['@type'] == 'Video':
+        if isinstance(track, Video):
             streams['video'].append(track)
-        elif track['@type'] == 'Audio':
+        elif isinstance(track, Audio):
             streams['audio'].append(track)
-        elif track['@type'] == 'Text':
+        elif isinstance(track, Text):
             streams['subtitle'].append(track)
+        elif isinstance(track, Menu):
+            streams['menu'].append(track)
+    if not isinstance(tracks[0], General):
+        raise TypeError("Expected a General track first.")
     gen_track = tracks[0]
-    assert len(streams['video']) == int(gen_track.get('VideoCount', 0))
-    assert len(streams['audio']) == int(gen_track.get('AudioCount', 0))
-    assert len(streams['subtitle']) == int(gen_track.get('TextCount', 0))
+    assert len(streams['video']) == int(gen_track.VideoCount)
+    assert len(streams['audio']) == int(gen_track.AudioCount)
+    assert len(streams['subtitle']) == int(gen_track.TextCount)
+    assert len(streams['menu']) == int(gen_track.MenuCount)
     return streams
 
 
@@ -90,8 +108,8 @@ class MediaContainer:
     filepath: str
     mediainfo: MediaInfo
     ffmpeg: FFmpegInfo
-    video: list[VideoStreamInfo]
-    audio: list[AudioStreamInfo]
+    video: list[VideoStream]
+    audio: list[AudioStream]
 
     def __init__(self, filepath: str):
         self.filepath = filepath
@@ -104,44 +122,41 @@ class MediaContainer:
 
 
     def analyze(self):
-        ffmpeg_streams = get_ffmpeg_streams(self.ffmpeg)
-        mediainfo_streams = get_mediainfo_streams(self.mediainfo)
+        ffmpeg_streams: FFmpegStreams = get_ffmpeg_streams(self.ffmpeg)
+        mediainfo_streams: MediaInfoStreams = get_mediainfo_streams(self.mediainfo)
         assert len(ffmpeg_streams['video']) == len(mediainfo_streams['video'])
         assert len(ffmpeg_streams['audio']) == len(mediainfo_streams['audio'])
         assert len(ffmpeg_streams['subtitle']) == len(mediainfo_streams['subtitle'])
 
-        n_videos = len(ffmpeg_streams['video'])
-        n_audio = len(ffmpeg_streams['audio'])
-        n_subtitle = len(ffmpeg_streams['subtitle'])
-
         for i in range(len(ffmpeg_streams['video'])):
-            idx = int(ffmpeg_streams['video'][i]['index'])
-            assert idx == (int(mediainfo['video'][i]['ID'])-1)
-            codec = mediainfo['video'][i]['Format']
-            level = mediainfo['video'][i]['Format_Level']
-            profile = mediainfo['video'][i]['Format_Profile']
-            bit_rate = float(mediainfo['video'][i]['BitRate'])/1024.
-            bit_depth = int(mediainfo['video'][i]['BitDepth'])
-            frame_rate = float(mediainfo['video'][i]['FrameRate'])
-            width = int(mediainfo['video'][i]['Width'])
-            height = int(mediainfo['video'][i]['Height'])
-            aspect_ratio = float(mediainfo['video'][i]['DisplayAspectRatio'])
-            color_space = mediainfo['video'][i]['ColorSpace']
-            chroma_subsampling = mediainfo['video'][i]['ChromaSubsampling']
-            if 'HDR_Format' in mediainfo['video'][i]:
+            fs = ffmpeg_streams['video'][i]
+            ms = mediainfo_streams['video'][i]
+            idx = int(fs['index'])
+            assert idx == (ms.ID-1)
+            codec = ms.Format
+            level = ms.Format_Level
+            profile = ms.Format_Profile
+            bit_rate = float(ms.BitRate)/1024.
+            bit_depth = ms.BitDepth
+            frame_rate = float(ms.FrameRate)
+            width = ms.Width
+            height = ms.Height
+            aspect_ratio = ms.DisplayAspectRatio
+            color_space = ms.ColorSpace
+            chroma_subsampling = ms.ChromaSubsampling
+            hdr: tuple[str, str, str] | None = None
+            if ms.HDR_Format is not None and ms.HDR_Format_Compatibility is not None:
                 hdr = (
-                    mediainfo['video'][i]['HDR_Format'],
-                    mediainfo['video'][i]['HDR_Compatibility'],
-                    mediainfo['video'][i]['color_primaries'])
-            else:
-                hdr = None
+                    ms.HDR_Format,
+                    ms.HDR_Format_Compatibility,
+                    ms.colour_primaries)
 
             v_stream = VideoStream(
                 self.filepath,
                 idx,
                 codec,
-                level,
                 profile,
+                level,
                 bit_rate,
                 bit_depth,
                 frame_rate,
@@ -156,10 +171,27 @@ class MediaContainer:
             self.video.append(v_stream)
 
         for i in range(len(ffmpeg_streams['audio'])):
-            idx = int(ffmpeg_streams['audio'][i]['index'])
-            assert idx == (int(mediainfo['audio'][i]['ID'])-1)
-            codec = mediainfo['audio'][i]['Format']
-            channels = int(mediainfo['audio'][i]['Channel(s)'])
+            fs = ffmpeg_streams['audio'][i]
+            ms = mediainfo_streams['audio'][i]
+            idx = int(fs['index'])
+            assert idx == ms.ID-1
+            codec = ms.Format
+            channels = ms.Channels
+
+            a_stream = AudioStream(
+                self.filepath,
+                idx,
+                codec,
+                channels,
+                float(ms.BitRate)/1024.,
+                ms.Language,
+                fs['title']
+            )
+
+            self.audio.append(a_stream)
 
         pprint(ffmpeg_streams)
         pprint(mediainfo_streams)
+
+        pprint(self.video)
+        pprint(self.audio)
