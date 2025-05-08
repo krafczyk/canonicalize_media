@@ -1,5 +1,5 @@
 from av_info.mediainfo import mediainfo, MediaInfo, Video, Audio, Text, Menu, General
-from av_info._ffmpeg import ffmpeg, FFmpegInfo, VideoStreamInfo, AudioStreamInfo, SubtitleStreamInfo
+from av_info.ffmpeg import ffmpeg, FFmpegInfo, VideoStreamInfo, AudioStreamInfo, SubtitleStreamInfo
 from dataclasses import dataclass
 from pprint import pprint
 from typing import override, TypedDict

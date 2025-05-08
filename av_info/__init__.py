@@ -1,4 +1,4 @@
-from av_info._ffmpeg import ffmpeg
+from av_info.ffmpeg import ffmpeg
 from av_info.mediainfo import mediainfo
 from av_info.session import MediaContainer
 
