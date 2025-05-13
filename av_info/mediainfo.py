@@ -11,14 +11,14 @@ class MILibrary(BaseModel):
 
 class General(BaseModel):
     kind: Literal["General"] = Field(..., alias="@type")
-    UniqueID: str
-    VideoCount: int
-    AudioCount: int
-    TextCount: int
-    MenuCount: int
+    UniqueID: str | None = None
+    VideoCount: int = 0
+    AudioCount: int = 0
+    TextCount: int = 0
+    MenuCount: int = 0
     FileExtension: str
     Format: str
-    Format_Version: int
+    Format_Version: int | None = None
     FileSize: int
     Duration: float
     OverallBitRate: int
@@ -26,37 +26,37 @@ class General(BaseModel):
     FrameCount: int
     StreamSize: int
     IsStreamable: str
-    Title: str
-    Movie: str
+    Title: str | None = None
+    Movie: str | None = None
     Encoded_Date: str
     File_Modified_Date: str
     File_Modified_Date_Local: str
-    Encoded_Application: str
-    Encoded_Library: str
+    Encoded_Application: str | None = None
+    Encoded_Library: str | None = None
 
 
 class Video(BaseModel):
     kind: Literal["Video"] = Field(..., alias="@type")
     StreamOrder: int
     ID: int
-    UniqueID: str
+    UniqueID: str | None = None
     Format: str
     Format_Profile: str
     Format_Level: int
-    Format_Tier: str
-    HDR_Format: str|None
-    HDR_Format_Version: str|None
-    HDR_Format_Profile: str|None
-    HDR_Format_Level: str|None
-    HDR_Format_Settings: str|None
-    HDR_Format_Compression: str|None
-    HDR_Format_Compatibility: str|None
+    Format_Tier: str | None = None
+    HDR_Format: str | None = None
+    HDR_Format_Version: str | None = None
+    HDR_Format_Profile: str | None = None
+    HDR_Format_Level: str | None = None
+    HDR_Format_Settings: str | None = None
+    HDR_Format_Compression: str | None = None
+    HDR_Format_Compatibility: str | None = None
     CodecID: str
     Duration: float
     BitRate: int
     Width: int
     Height: int
-    Stored_Height: int
+    Stored_Height: int | None = None
     Sampled_Width: int
     Sampled_Height: int
     PixelAspectRatio: float
@@ -68,36 +68,36 @@ class Video(BaseModel):
     FrameCount: int
     ColorSpace: str
     ChromaSubsampling: str
-    ChromaSubsampling_Position: str
+    ChromaSubsampling_Position: str | None = None
     BitDepth: int
-    Delay: float
-    Delay_Source: str
+    Delay: float | None = None
+    Delay_Source: str | None = None
     StreamSize: int
-    Default: str
-    Forced: str
-    colour_description_present: str
-    colour_range_Source: str
-    colour_primaries: str
-    colour_primaries_Source: str
-    transfer_characteristics: str
-    transfer_characteristics_Source: str
-    matrix_coefficients: str
-    matrix_coefficients_Source: str
-    MasteringDisplay_ColorPrimaries: str
-    MasteringDisplay_ColorPrimaries_Source: str
-    MasteringDisplay_Luminance: str
-    MasteringDisplay_Luminance_Source: str
-    MaxCLL: str
-    MaxCLL_Source: str
-    MaxFALL: str
-    MaxFALL_Source: str
+    Default: str | None = None
+    Forced: str | None = None
+    colour_description_present: str | None = None
+    colour_range_Source: str | None = None
+    colour_primaries: str | None = None
+    colour_primaries_Source: str | None = None
+    transfer_characteristics: str | None = None
+    transfer_characteristics_Source: str | None = None
+    matrix_coefficients: str | None = None
+    matrix_coefficients_Source: str | None = None
+    MasteringDisplay_ColorPrimaries: str | None = None
+    MasteringDisplay_ColorPrimaries_Source: str | None = None
+    MasteringDisplay_Luminance: str | None = None
+    MasteringDisplay_Luminance_Source: str | None = None
+    MaxCLL: str | None = None
+    MaxCLL_Source: str | None = None
+    MaxFALL: str | None = None
+    MaxFALL_Source: str | None = None
 
 
 class Audio(BaseModel):
     kind: Literal["Audio"] = Field(..., alias="@type")
     StreamOrder: int
     ID: int
-    UniqueID: str
+    UniqueID: str | None = None
     Format: str
     Format_Commercial_IfAny: str
     Format_Settings_SBR: str
@@ -114,13 +114,13 @@ class Audio(BaseModel):
     FrameRate: float
     FrameCount: int
     Compression_Mode: str
-    Delay: float
-    Delay_Source: str
-    Video_Delay: float
+    Delay: float | None = None
+    Delay_Source: str | None = None
+    Video_Delay: float | None = None
     StreamSize: int
     Language: str
-    Default: str
-    Forced: str
+    Default: str | None = None
+    Forced: str | None = None
 
 
 class Text(BaseModel):
@@ -144,7 +144,7 @@ class Text(BaseModel):
 
 class Menu(BaseModel):
     kind: Literal["Menu"] = Field(..., alias="@type")
-    extra: dict[str,str]
+    extra: dict[str,str] | None = None
 
 
 Track = Annotated[
