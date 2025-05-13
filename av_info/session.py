@@ -226,3 +226,16 @@ class MediaContainer:
 
         if len(mediainfo_streams['menu']) > 0:
             self.menu = True
+
+    def summarize(self):
+        print(f"filepath: {self.filepath}")
+        print(f"video streams:")
+        print(self.video)
+        print(f"audio streams:")
+        print(self.audio)
+        print(f"subtitle streams:")
+        print(self.subtitle)
+        if self.menu:
+            print("Contains a menu")
+        else:
+            print("Doesn't contain a menu")

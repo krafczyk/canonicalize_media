@@ -15,6 +15,12 @@ if __name__ == "__main__":
 
     inputs: list[str] = cast(list[str], args.input)
 
+    containers: list[MediaContainer] = []
+
     for i in inputs:
         file_cont = MediaContainer(i)
         file_cont.analyze()
+        containers.append(file_cont)
+
+        print(f"File {i}")
+        file_cont.summarize()
