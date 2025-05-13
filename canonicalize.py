@@ -15,7 +15,6 @@ if __name__ == "__main__":
 
     inputs: list[str] = cast(list[str], args.input)
 
-
     for i in inputs:
         file_cont = MediaContainer(i)
         file_cont.analyze()

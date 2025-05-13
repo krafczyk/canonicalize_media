@@ -1,4 +1,5 @@
-from av_info.mediainfo import mediainfo, MediaInfo, Video, Audio, Text, Menu, General
+from av_info.mediainfo import mediainfo, MediaInfo, Video, Audio, Text, General
+from av_info.mediainfo import Menu as MIMenu
 from av_info.ffmpeg import ffmpeg, FFmpegInfo, VideoStreamInfo, AudioStreamInfo, SubtitleStreamInfo
 from dataclasses import dataclass
 from pprint import pprint
@@ -43,16 +44,25 @@ class AudioStream:
 
 
 @dataclass
-class TextStream:
+class SubtitleStream:
     filepath: str
     idx: int
     codec: str
     language: str
-    title: str
+    title: str | None
 
     @override
     def __str__(self):
         return f"{self.filepath},{self.idx}: {self.codec} {self.language} {self.title}"
+
+
+@dataclass
+class Menu:
+    filepath: str
+
+    @override
+    def __str__(self):
+        return f"{self.filepath}"
 
 
 class FFmpegStreams(TypedDict):
@@ -79,7 +89,7 @@ class MediaInfoStreams(TypedDict):
     video: list[Video]
     audio: list[Audio]
     subtitle: list[Text]
-    menu: list[Menu]
+    menu: list[MIMenu]
 
 
 def get_mediainfo_streams(mediainfo_data: MediaInfo) -> MediaInfoStreams:
@@ -92,8 +102,10 @@ def get_mediainfo_streams(mediainfo_data: MediaInfo) -> MediaInfoStreams:
             streams['audio'].append(track)
         elif isinstance(track, Text):
             streams['subtitle'].append(track)
-        elif isinstance(track, Menu):
+        elif isinstance(track, MIMenu):
             streams['menu'].append(track)
+        else:
+            raise RuntimeError(f"Unexpected track type: {type(track)}")
     if not isinstance(tracks[0], General):
         raise TypeError("Expected a General track first.")
     gen_track = tracks[0]
@@ -110,6 +122,8 @@ class MediaContainer:
     ffmpeg: FFmpegInfo
     video: list[VideoStream]
     audio: list[AudioStream]
+    subtitle: list[SubtitleStream]
+    menu: bool
 
     def __init__(self, filepath: str):
         self.filepath = filepath
@@ -118,7 +132,8 @@ class MediaContainer:
 
         self.video = []
         self.audio = []
-        #self.subtitle = []
+        self.subtitle = []
+        self.menu = False
 
 
     def analyze(self):
@@ -185,13 +200,29 @@ class MediaContainer:
                 channels,
                 float(ms.BitRate)/1024.,
                 ms.Language,
-                fs['title']
+                fs.get('title', None)
             )
 
             self.audio.append(a_stream)
 
-        pprint(ffmpeg_streams)
-        pprint(mediainfo_streams)
+        for i in range(len(ffmpeg_streams['subtitle'])):
+            fs = ffmpeg_streams['subtitle'][i]
+            ms = mediainfo_streams['subtitle'][i]
+            idx = int(fs['index'])
+            assert idx == ms.ID-1
+            codec = ms.CodecID
+            language = ms.Language
+            title = fs.get("title", None)
 
-        pprint(self.video)
-        pprint(self.audio)
+            t_stream = SubtitleStream(
+                self.filepath,
+                idx,
+                codec,
+                language,
+                title
+            )
+
+            self.subtitle.append(t_stream)
+
+        if len(mediainfo_streams['menu']) > 0:
+            self.menu = True
