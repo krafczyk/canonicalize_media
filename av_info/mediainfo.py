@@ -17,18 +17,18 @@ class General(BaseModel):
     TextCount: int = 0
     MenuCount: int = 0
     FileExtension: str
-    Format: str
+    Format: str | None = None
     Format_Version: int | None = None
     FileSize: int
-    Duration: float
-    OverallBitRate: int
-    FrameRate: float
-    FrameCount: int
+    Duration: float | None = None
+    OverallBitRate: int | None = None
+    FrameRate: float | None = None
+    FrameCount: int | None = None
     StreamSize: int
-    IsStreamable: str
+    IsStreamable: str | None = None
     Title: str | None = None
     Movie: str | None = None
-    Encoded_Date: str
+    Encoded_Date: str | None = None
     File_Modified_Date: str
     File_Modified_Date_Local: str
     Encoded_Application: str | None = None
