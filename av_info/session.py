@@ -21,7 +21,7 @@ class VideoStream:
     aspect_ratio: float
     color_space: str
     chroma_subsampling: str
-    hdr_format: tuple[str, str, str] | None
+    hdr_format: tuple[str, str, str|None] | None
 
     @override
     def __str__(self):
@@ -47,13 +47,15 @@ class AudioStream:
 class SubtitleStream:
     filepath: str
     idx: int
+    format: str
     codec: str
+    codec_long: str
     language: str
     title: str | None
 
     @override
     def __str__(self):
-        return f"{self.filepath},{self.idx}: {self.codec} {self.language} {self.title}"
+        return f"{self.filepath},{self.idx}: {self.format} {self.language} {self.title}"
 
 
 @dataclass
@@ -141,7 +143,6 @@ class MediaContainer:
         mediainfo_streams: MediaInfoStreams = get_mediainfo_streams(self.mediainfo)
         assert len(ffmpeg_streams['video']) == len(mediainfo_streams['video'])
         assert len(ffmpeg_streams['audio']) == len(mediainfo_streams['audio'])
-        assert len(ffmpeg_streams['subtitle']) == len(mediainfo_streams['subtitle'])
 
         for i in range(len(ffmpeg_streams['video'])):
             fs = ffmpeg_streams['video'][i]
@@ -159,7 +160,7 @@ class MediaContainer:
             aspect_ratio = ms.DisplayAspectRatio
             color_space = ms.ColorSpace
             chroma_subsampling = ms.ChromaSubsampling
-            hdr: tuple[str, str, str] | None = None
+            hdr: tuple[str, str, str|None] | None = None
             if ms.HDR_Format is not None and ms.HDR_Format_Compatibility is not None:
                 hdr = (
                     ms.HDR_Format,
@@ -205,27 +206,31 @@ class MediaContainer:
 
             self.audio.append(a_stream)
 
+        if len(mediainfo_streams['menu']) > 0:
+            self.menu = True
+
         for i in range(len(ffmpeg_streams['subtitle'])):
             fs = ffmpeg_streams['subtitle'][i]
-            ms = mediainfo_streams['subtitle'][i]
+            #ms = mediainfo_streams['subtitle'][i]
             idx = int(fs['index'])
-            assert idx == ms.ID-1
-            codec = ms.CodecID
-            language = ms.Language
+            format = fs['format']
+            language = fs['language']
+            codec = fs['codec']
+            codec_long = fs['codec_long']
             title = fs.get("title", None)
 
             t_stream = SubtitleStream(
                 self.filepath,
                 idx,
+                format,
                 codec,
+                codec_long,
                 language,
                 title
             )
 
             self.subtitle.append(t_stream)
 
-        if len(mediainfo_streams['menu']) > 0:
-            self.menu = True
 
     def summarize(self):
         print(f"filepath: {self.filepath}")

@@ -1,5 +1,7 @@
 extern "C" {
 #include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/avutil.h>
 #include <libavutil/dict.h> // for av_dict_get
 }
 #include <Python.h>
@@ -143,16 +145,17 @@ static PyObject* ffmpeg(PyObject* self, PyObject* input_file) {
             const char *title = ttl ? ttl->value : "";
             if (!add_str_to_dict(stream_dict, "title", title)) return cleanup();
 
+            const char *codec_name  = avcodec_get_name(codecpar->codec_id);          // "ass", "webvtt", "hdmv_pgs_subtitle", …
+            const AVCodecDescriptor *desc = avcodec_descriptor_get(codecpar->codec_id);
+            const char *codec_long = desc ? desc->long_name : codec_name;            // "SSA/ASS subtitle", …
+            if (!add_str_to_dict(stream_dict, "codec",      codec_name))  return cleanup();
+            if (!add_str_to_dict(stream_dict, "codec_long", codec_long)) return cleanup();
+
             // format (FourCC from codec_tag)
-            uint32_t tag = codecpar->codec_tag;
-            char fmt[5] = {
-                char( tag        & 0xFF),
-                char((tag >>  8) & 0xFF),
-                char((tag >> 16) & 0xFF),
-                char((tag >> 24) & 0xFF),
-                '\0'
-            };
-            if (!add_str_to_dict(stream_dict, "format", fmt)) return cleanup();
+            char tagbuf[AV_FOURCC_MAX_STRING_SIZE];
+            av_fourcc_make_string(tagbuf, codecpar->codec_tag);
+            // tagbuf now holds the four-character code + '\0'
+            if (!add_str_to_dict(stream_dict, "format", tagbuf)) return cleanup();
         }
 
         if (PyList_Append(streams_list, stream_dict) == -1) {

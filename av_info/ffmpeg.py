@@ -23,9 +23,11 @@ class AudioStreamInfo(StreamInfoBase, total=False):
 
 class SubtitleStreamInfo(StreamInfoBase, total=False):
     type: Required[Literal["subtitle"]]
-    language: str
+    language: Required[str]
     title: str
-    format: str
+    codec: Required[str]
+    codec_long: Required[str]
+    format: Required[str]
 
 # A union covers either kind of stream
 StreamInfo = VideoStreamInfo|AudioStreamInfo|SubtitleStreamInfo
