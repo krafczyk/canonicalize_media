@@ -42,7 +42,7 @@ class Video(BaseModel):
     UniqueID: str | None = None
     Format: str
     Format_Profile: str
-    Format_Level: int
+    Format_Level: str
     Format_Tier: str | None = None
     HDR_Format: str | None = None
     HDR_Format_Version: str | None = None
@@ -99,8 +99,8 @@ class Audio(BaseModel):
     ID: int
     UniqueID: str | None = None
     Format: str
-    Format_Commercial_IfAny: str
-    Format_Settings_SBR: str
+    Format_Commercial_IfAny: str | None = None
+    Format_Settings_SBR: str | None = None
     Format_AdditionalFeatures: str
     CodecID: str
     Duration: float

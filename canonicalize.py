@@ -95,11 +95,17 @@ if __name__ == "__main__":
     # Sort subtitle streams english streams first
     subtitle_streams_sorted = sorted(subtitle_streams, key=lambda x: (x.language != "eng"))
 
+    s_idx = 0
     for s_stream in subtitle_streams_sorted:
         if s_stream.codec not in acceptable_subtitle_codecs:
             raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
         stream_id = filename_cont_map[s_stream.filepath].idx
         ffmpeg_cmd += [ "-map", f"{stream_id}:0" ]
+        if s_stream.language != "und":
+            ffmpeg_cmd += [ f"-metadata:s:s:{s_idx}", f"language={s_stream.language}" ]
+        if s_stream.title != "":
+            ffmpeg_cmd += [ f"-metadata:s:s:{s_idx}", f"title={s_stream.title}" ]
+        s_idx += 1
 
     # Set subtitle codec
     ffmpeg_cmd += [ "-c:s", "mov_text" ] # by default translate to mov_text
