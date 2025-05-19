@@ -119,6 +119,7 @@ def get_mediainfo_streams(mediainfo_data: MediaInfo) -> MediaInfoStreams:
 
 
 class MediaContainer:
+    idx: int
     filepath: str
     mediainfo: MediaInfo
     ffmpeg: FFmpegInfo
@@ -127,7 +128,8 @@ class MediaContainer:
     subtitle: list[SubtitleStream]
     menu: bool
 
-    def __init__(self, filepath: str):
+    def __init__(self, idx: int, filepath: str):
+        self.idx = idx
         self.filepath = filepath
         self.ffmpeg = ffmpeg(filepath)
         self.mediainfo = mediainfo(filepath)
