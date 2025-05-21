@@ -12,7 +12,7 @@ class VideoStream:
     idx: int
     codec: str
     profile: str
-    level: int
+    level: str
     bit_rate: float # rate kb/s
     bit_depth: int
     frame_rate: float

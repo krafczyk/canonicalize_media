@@ -2,6 +2,10 @@ import subprocess
 import json
 
 
+def version_tuple(ver_str: str) -> tuple[int,...]:
+    return tuple(map(int, ver_str.split('.')))
+
+
 def get_h264_level_name(level: int) -> str:
     """Return the H.264 level name for a given numeric level value."""
     mapping = {
