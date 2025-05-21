@@ -4,6 +4,7 @@ from av_info.session import VideoStream, AudioStream, SubtitleStream
 from av_info.utils import version_tuple
 from typing import cast
 import subprocess
+import json
 
 
 acceptable_subtitle_codecs = ['subrip']
@@ -256,7 +257,8 @@ if __name__ == "__main__":
     ffmpeg_cmd += [ "-c:s", "mov_text" ] # by default translate to mov_text
 
     # Add output file
-    ffmpeg_cmd += [cast(str,args.output)]
+    output_filepath = cast(str,args.output)
+    ffmpeg_cmd += [ output_filepath ]
 
     # Print the command
     print("ffmpeg command:")
@@ -265,3 +267,13 @@ if __name__ == "__main__":
     # Run the command
     if not cast(bool, args.dry_run):
         _ = subprocess.run(ffmpeg_cmd, capture_output=False, check=True)
+
+        # Write metadata about input files
+        metadata = {
+            "input_files": inputs
+        }
+
+        # replace the extension with .json
+        metadata_filepath = output_filepath.split(".")[0]
+        with open(metadata_filepath, "w") as f:
+            _ = f.write(json.dumps(metadata, indent=4))
