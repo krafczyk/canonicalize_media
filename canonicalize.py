@@ -35,6 +35,7 @@ max_bitrate_map: dict[str, int] = {
 supported_codecs = [
     "h264",
     "avc1", # another name for h264
+    "AVC",
     "hevc",
 ]
 
