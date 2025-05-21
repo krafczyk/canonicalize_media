@@ -13,7 +13,17 @@ ffmpeg \
     [0:v]drawtext=text='Left':x=10:y=10:fontsize=36:fontcolor=white@0.5[left]; \
     [1:v]drawtext=text='Right':x=10:y=10:fontsize=36:fontcolor=white@0.5[right]; \
     [left][right]hstack=inputs=2[top]; \
-    [0:v][1:v]blend=all_mode=difference:all_opacity=1[diffraw]; \
+    [0:v]colorchannelmixer=\
+0.2126:0.7152:0.0722:0:\
+0.2126:0.7152:0.0722:0:\
+0.2126:0.7152:0.0722:0:\
+0:0:0:1[gray1]; \
+    [1:v]colorchannelmixer=\
+0.2126:0.7152:0.0722:0:\
+0.2126:0.7152:0.0722:0:\
+0.2126:0.7152:0.0722:0:\
+0:0:0:1[gray2]; \
+    [gray1][gray2]blend=all_mode=difference:all_opacity=1[diffraw]; \
     [diffraw]drawtext=text='Diff':x=10:y=10:fontsize=36:fontcolor=white@0.5[diff]; \
     [diff]pad=2*iw:ih:iw/2:0:color=black[diffpadded]; \
     [top][diffpadded]vstack=inputs=2[out]" \
