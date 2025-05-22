@@ -24,7 +24,7 @@ class General(BaseModel):
     OverallBitRate: int | None = None
     FrameRate: float | None = None
     FrameCount: int | None = None
-    StreamSize: int
+    StreamSize: int | None = None
     IsStreamable: str | None = None
     Title: str | None = None
     Movie: str | None = None
@@ -53,7 +53,7 @@ class Video(BaseModel):
     HDR_Format_Compatibility: str | None = None
     CodecID: str
     Duration: float
-    BitRate: int
+    BitRate: int | None = None
     Width: int
     Height: int
     Stored_Height: int | None = None
@@ -62,17 +62,17 @@ class Video(BaseModel):
     PixelAspectRatio: float
     DisplayAspectRatio: float
     FrameRate_Mode: str
-    FrameRate: float
+    FrameRate: float | None = None
     FrameRate_Num: int
     FrameRate_Den: int
-    FrameCount: int
+    FrameCount: int | None = None
     ColorSpace: str
     ChromaSubsampling: str
     ChromaSubsampling_Position: str | None = None
     BitDepth: int
     Delay: float | None = None
     Delay_Source: str | None = None
-    StreamSize: int
+    StreamSize: int | None = None
     Default: str | None = None
     Forced: str | None = None
     colour_description_present: str | None = None
@@ -104,7 +104,7 @@ class Audio(BaseModel):
     Format_AdditionalFeatures: str | None = None
     CodecID: str
     Duration: float
-    BitRate: int
+    BitRate: int | None = None
     Channels: int
     ChannelPositions: str
     ChannelLayout: str
@@ -112,12 +112,12 @@ class Audio(BaseModel):
     SamplingRate: int
     SamplingCount: int
     FrameRate: float
-    FrameCount: int
+    FrameCount: int | None = None
     Compression_Mode: str
     Delay: float | None = None
     Delay_Source: str | None = None
     Video_Delay: float | None = None
-    StreamSize: int
+    StreamSize: int | None = None
     Language: str | None = None
     Default: str | None = None
     Forced: str | None = None

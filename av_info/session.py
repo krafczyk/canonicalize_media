@@ -15,7 +15,7 @@ class VideoStream:
     level: str
     bit_rate: float # rate kb/s
     bit_depth: int
-    frame_rate: float
+    frame_rate: float | None
     width: int
     height: int
     aspect_ratio: float
@@ -34,8 +34,8 @@ class AudioStream:
     idx: int
     codec: str
     channels: int
-    bit_rate: float
-    language: str
+    bit_rate: float | None
+    language: str | None
     title: str | None
 
     @override
@@ -154,9 +154,17 @@ class MediaContainer:
             codec = ms.Format
             level = ms.Format_Level
             profile = ms.Format_Profile
-            bit_rate = float(ms.BitRate)/1024.
+            bit_rate: float
+            if ms.BitRate is None:
+                if "bit_rate" not in fs:
+                    raise ValueError("Unable to guess bitrate of video!")
+                bit_rate = fs["bit_rate"]/1024.
+            else:
+                bit_rate = float(ms.BitRate)/1024.
             bit_depth = ms.BitDepth
-            frame_rate = float(ms.FrameRate)
+            frame_rate: float|None = None
+            if ms.FrameRate is not None:
+                frame_rate = float(ms.FrameRate)
             width = ms.Width
             height = ms.Height
             aspect_ratio = ms.DisplayAspectRatio
@@ -195,13 +203,21 @@ class MediaContainer:
             assert idx == ms.ID-1
             codec = ms.Format
             channels = ms.Channels
+            bit_rate: float | None
+            if ms.BitRate is None:
+                if "bit_rate" in fs:
+                    bit_rate = fs["bit_rate"]/1024.
+                else:
+                    bit_rate = None
+            else:
+                bit_rate = ms.BitRate/1024.
 
             a_stream = AudioStream(
                 self.filepath,
                 idx,
                 codec,
                 channels,
-                float(ms.BitRate)/1024.,
+                bit_rate,
                 ms.Language,
                 fs.get('title', None)
             )
