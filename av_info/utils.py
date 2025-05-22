@@ -1,5 +1,6 @@
-import subprocess
-import json
+import os
+import re
+from langcodes import Language
 
 
 def version_tuple(ver_str: str) -> tuple[int,...]:
@@ -47,3 +48,35 @@ def get_hevc_level_name(level:int) -> str:
         186: "6.2"
     }
     return mapping.get(level, "unknown")
+
+
+def guess_lang_from_filename(path: str) -> str | None:
+    """
+    Given a path like "English(SDH).srt" or "/subs/fra.srt", try to
+    guess the language and return its ISO 639-2/T code (e.g. "eng", "fra").
+    Returns None if no match is found.
+    """
+    # 1) Basename without extension
+    base = os.path.splitext(os.path.basename(path))[0]
+    # 2) Drop anything in parentheses
+    cleaned = re.sub(r'\(.*?\)', '', base)
+    # 3) Split on non-alphanumeric to yield tokens
+    tokens = re.split(r'[^A-Za-z0-9]+', cleaned)
+    for tok in tokens:
+        if not tok:
+            continue
+        t = tok.lower()
+        # Try interpreting as a tag first (pt, por, eng, spa, etc)
+        if len(t) in (2, 3):
+            try:
+                code3 = Language.get(t).to_alpha3()
+                return code3
+            except Exception:
+                pass
+        # Otherwise, try interpreting it as a language name
+        try:
+            code3 = Language.get(t).to_alpha3()
+            return code3
+        except Exception:
+            pass
+    return None

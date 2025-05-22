@@ -2,3 +2,4 @@ pyav
 pydantic
 pymediainfo
 setuptools
+langcodes

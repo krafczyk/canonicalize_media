@@ -1,10 +1,11 @@
 import argparse
 from av_info import MediaContainer
 from av_info.session import VideoStream, AudioStream, SubtitleStream
-from av_info.utils import version_tuple
+from av_info.utils import version_tuple, guess_lang_from_filename
 from typing import cast
 import subprocess
 import json
+import os
 
 
 acceptable_subtitle_codecs = ['subrip']
@@ -184,8 +185,29 @@ if __name__ == "__main__":
         file_cont.analyze()
         stream_lengths = (len(file_cont.video), len(file_cont.audio), len(file_cont.subtitle))
         if len(file_cont.subtitle) == 1 and sum(stream_lengths) == 1:
-            title = i.split('@@')[1]
-            language = i.split('@@')[2]
+            # This is a single subtitle stream
+            title: str
+            language: str
+            if '@@' in i:
+                title_components = i.split('@@')
+                if len(title_components) == 2:
+                    title = title_components[1]
+                    l = guess_lang_from_filename(title)
+                    if l is None:
+                        raise ValueError(f"Could not guess language from title {title}")
+                    language = l
+                if len(title_components) == 3:
+                    title = title_components[1]
+                    language = title_components[2]
+                else:
+                    raise ValueError(f"Invalid input format: {i}. Expected <filename>@@<Title>@@<Language>")
+            else:
+                # Guess language from filename, use title as filename
+                title = os.path.basename(i)
+                l = guess_lang_from_filename(i)
+                if l is None:
+                    raise ValueError(f"Could not guess language from filename {i}")
+                language = l
             file_cont.subtitle[0].title = title
             file_cont.subtitle[0].language = language
         if len(file_cont.audio) == 1 and sum(stream_lengths) == 1:
@@ -274,6 +296,6 @@ if __name__ == "__main__":
         }
 
         # replace the extension with .json
-        metadata_filepath = output_filepath.split(".")[0]
+        metadata_filepath = output_filepath.split(".")[0]+".json"
         with open(metadata_filepath, "w") as f:
             _ = f.write(json.dumps(metadata, indent=4))
