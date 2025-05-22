@@ -10,7 +10,7 @@ class MILibrary(BaseModel):
 
 
 class General(BaseModel):
-    kind: Literal["General"] = Field(..., alias="@type")
+    kind: Literal["General"] = Field(alias='@type')
     UniqueID: str | None = None
     VideoCount: int = 0
     AudioCount: int = 0
@@ -36,7 +36,7 @@ class General(BaseModel):
 
 
 class Video(BaseModel):
-    kind: Literal["Video"] = Field(..., alias="@type")
+    kind: Literal["Video"] = Field(alias='@type')
     StreamOrder: int
     ID: int
     UniqueID: str | None = None
@@ -94,14 +94,14 @@ class Video(BaseModel):
 
 
 class Audio(BaseModel):
-    kind: Literal["Audio"] = Field(..., alias="@type")
+    kind: Literal["Audio"] = Field(alias='@type')
     StreamOrder: int
     ID: int
     UniqueID: str | None = None
     Format: str
     Format_Commercial_IfAny: str | None = None
     Format_Settings_SBR: str | None = None
-    Format_AdditionalFeatures: str
+    Format_AdditionalFeatures: str | None = None
     CodecID: str
     Duration: float
     BitRate: int
@@ -124,26 +124,33 @@ class Audio(BaseModel):
 
 
 class Text(BaseModel):
-    kind: Literal["Text"] = Field(..., alias="@type")
-    typeorder: int = Field(..., alias="@typeorder")
-    StreamOrder: int
-    ID: int
-    UniqueID: str
+    kind: Literal["Text"] = Field(alias='@type')
+    typeorder: int | None = Field(None, alias="@typeorder")
+    StreamOrder: int | None = None
+    ID: int | None = None
+    UniqueID: str | None = None
     Format: str
-    CodecID: str
+    CodecID: str | None = None
     Duration: float
-    BitRate: int
-    FrameRate: float
-    FrameCount: int
-    ElementCount: int
-    StreamSize: int
-    Language: str
-    Default: str
-    Forced: str
+    Duration_Start: float | None = None
+    Duration_End: float | None = None
+    Compression_Mode: str | None = None
+    Events_Total: int | None = None
+    Events_MinDuration: float | None = None
+    Lines_Count: int | None = None
+    Lines_MaxCountPerEvent: int | None = None
+    BitRate: int | None = None
+    FrameRate: float | None = None
+    FrameCount: int | None = None
+    ElementCount: int | None = None
+    StreamSize: int | None = None
+    Language: str | None = None
+    Default: str | None = None
+    Forced: str | None = None
 
 
 class Menu(BaseModel):
-    kind: Literal["Menu"] = Field(..., alias="@type")
+    kind: Literal["Menu"] = Field(alias='@type')
     extra: dict[str,str] | None = None
 
 
