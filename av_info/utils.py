@@ -1,6 +1,8 @@
 import os
 import re
-from langcodes import Language
+from pathlib import Path
+import langcodes
+from langcodes import Language, tag_is_valid
 
 
 def version_tuple(ver_str: str) -> tuple[int,...]:
@@ -52,31 +54,32 @@ def get_hevc_level_name(level:int) -> str:
 
 def guess_lang_from_filename(path: str) -> str | None:
     """
-    Given a path like "English(SDH).srt" or "/subs/fra.srt", try to
-    guess the language and return its ISO 639-2/T code (e.g. "eng", "fra").
-    Returns None if no match is found.
+    Given a filename (possibly with a path) like
+    ".../Subs/Danish.srt" or "pt.srt" or "English(SDH).srt", return
+    the ISO 639-2/T code (e.g. "dan", "por", "eng") or None.
     """
-    # 1) Basename without extension
-    base = os.path.splitext(os.path.basename(path))[0]
-    # 2) Drop anything in parentheses
-    cleaned = re.sub(r'\(.*?\)', '', base)
-    # 3) Split on non-alphanumeric to yield tokens
-    tokens = re.split(r'[^A-Za-z0-9]+', cleaned)
+    stem = Path(path).stem
+    cleaned = re.sub(r'\(.*?\)', '', stem)
+    tokens = re.split(r'[^A-Za-z]+', cleaned)
+
     for tok in tokens:
         if not tok:
             continue
-        t = tok.lower()
-        # Try interpreting as a tag first (pt, por, eng, spa, etc)
-        if len(t) in (2, 3):
+        lower = tok.lower()
+
+        # 1) If it's already a valid BCP-47 tag, normalize to 3-letter
+        if tag_is_valid(lower):
             try:
-                code3 = Language.get(t).to_alpha3()
-                return code3
+                return Language.get(lower).to_alpha3()
             except Exception:
                 pass
-        # Otherwise, try interpreting it as a language name
+
+        # 2) Fuzzy-match a language *name* (e.g. "Danish", "français")
         try:
-            code3 = Language.get(t).to_alpha3()
-            return code3
+            lang = langcodes.find(tok)  # <-- recognizes names as well as tags :contentReference[oaicite:0]{index=0}
+            # lang might be something like Language.make(language='da')
+            return lang.to_alpha3()
         except Exception:
             pass
+
     return None
