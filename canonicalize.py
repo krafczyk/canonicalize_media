@@ -202,8 +202,8 @@ if __name__ == "__main__":
                 else:
                     raise ValueError(f"Invalid input format: {i}. Expected <filename>@@<Title>@@<Language>")
             else:
-                # Guess language from filename, use title as filename
-                title = os.path.basename(i)
+                # Guess language from filename, use filename without extension as title
+                title = os.path.splitext(os.path.basename(i))[0]
                 l = guess_lang_from_filename(i)
                 if l is None:
                     raise ValueError(f"Could not guess language from filename {i}")
