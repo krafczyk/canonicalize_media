@@ -279,6 +279,15 @@ if __name__ == "__main__":
     # Set subtitle codec
     ffmpeg_cmd += [ "-c:s", "mov_text" ] # by default translate to mov_text
 
+    # Set default streams
+    ffmpeg_cmd += [
+        "-disposition:a:0", "default",
+    ]
+    if len(subtitle_streams_sorted) > 0:
+        ffmpeg_cmd += [
+            "-disposition:s:0", "default",
+        ]
+
     # Add output file
     output_filepath = cast(str,args.output)
     ffmpeg_cmd += [ output_filepath ]
@@ -293,7 +302,8 @@ if __name__ == "__main__":
 
         # Write metadata about input files
         metadata = {
-            "input_files": inputs
+            "input_files": inputs,
+            "ffmpeg_cmd": " ".join(ffmpeg_cmd),
         }
 
         # replace the extension with .json
