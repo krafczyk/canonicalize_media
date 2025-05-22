@@ -39,6 +39,7 @@ supported_codecs = [
     "avc1", # another name for h264
     "AVC",
     "hevc",
+    "HEVC",
 ]
 
 
@@ -196,7 +197,7 @@ if __name__ == "__main__":
                     if l is None:
                         raise ValueError(f"Could not guess language from title {title}")
                     language = l
-                if len(title_components) == 3:
+                elif len(title_components) == 3:
                     title = title_components[1]
                     language = title_components[2]
                 else:

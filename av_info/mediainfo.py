@@ -118,7 +118,7 @@ class Audio(BaseModel):
     Delay_Source: str | None = None
     Video_Delay: float | None = None
     StreamSize: int
-    Language: str
+    Language: str | None = None
     Default: str | None = None
     Forced: str | None = None
 
