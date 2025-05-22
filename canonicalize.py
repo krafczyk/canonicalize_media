@@ -269,7 +269,7 @@ if __name__ == "__main__":
         if s_stream.codec not in acceptable_subtitle_codecs:
             raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
         stream_id = filename_cont_map[s_stream.filepath].idx
-        ffmpeg_cmd += [ "-map", f"{stream_id}:0" ]
+        ffmpeg_cmd += [ "-map", f"{stream_id}:{s_stream.idx}" ]
         if s_stream.language != "und":
             ffmpeg_cmd += [ f"-metadata:s:s:{s_idx}", f"language={s_stream.language}" ]
         if s_stream.title != "":
