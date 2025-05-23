@@ -183,34 +183,34 @@ if __name__ == "__main__":
         stream_lengths = (len(file_cont.video), len(file_cont.audio), len(file_cont.subtitle))
         if len(file_cont.subtitle) == 1 and sum(stream_lengths) == 1:
             # This is a single subtitle stream
-            title: str
+            sub_title: str
             language: str
             if '@@' in i:
                 title_components = i.split('@@')
                 if len(title_components) == 2:
-                    title = title_components[1]
-                    l = guess_lang_from_filename(title)
+                    sub_title = title_components[1]
+                    l = guess_lang_from_filename(sub_title)
                     if l is None:
-                        raise ValueError(f"Could not guess language from title {title}")
+                        raise ValueError(f"Could not guess language from title {sub_title}")
                     language = l
                 elif len(title_components) == 3:
-                    title = title_components[1]
+                    sub_title = title_components[1]
                     language = title_components[2]
                 else:
                     raise ValueError(f"Invalid input format: {i}. Expected <filename>@@<Title>@@<Language>")
             else:
                 # Guess language from filename, use filename without extension as title
-                title = os.path.splitext(os.path.basename(i))[0]
+                sub_title = os.path.splitext(os.path.basename(i))[0]
                 l = guess_lang_from_filename(i)
                 if l is None:
                     raise ValueError(f"Could not guess language from filename {i}")
                 language = l
-            file_cont.subtitle[0].title = title
+            file_cont.subtitle[0].title = sub_title
             file_cont.subtitle[0].language = language
         if len(file_cont.audio) == 1 and sum(stream_lengths) == 1:
-            title = i.split('@@')[1]
+            sub_title = i.split('@@')[1]
             language = i.split('@@')[2]
-            file_cont.audio[0].title = title
+            file_cont.audio[0].title = sub_title
             file_cont.audio[0].language = language
         containers.append(file_cont)
         filename_cont_map[file_cont.filepath] = file_cont
@@ -225,8 +225,9 @@ if __name__ == "__main__":
     if len(video_streams) > 1:
         raise ValueError("Only one video stream is supported!")
 
+    args_res: str | None = cast(str | None, args.res)
     res: str
-    if args.res is None:
+    if args_res is None:
         # Guess resolution from video stream
         vid_width = video_streams[0].width
         if vid_width >= 3840:
@@ -240,20 +241,21 @@ if __name__ == "__main__":
         else:
             raise ValueError("Video resolution is too low.")
     else:
-        res = cast(str, args.res)
-        if res not in ["480p", "720p", "1080p", "4K"]:
+        if args_res not in ["480p", "720p", "1080p", "4K"]:
             raise ValueError("Resolution must be one of 480p, 720p, 1080p, or 4K.")
+        res = args_res
 
     output_filepath: str
+    args_output: str | None = cast(str | None, args.output)
     title: str | None = cast(str |None, args.title)
-    if args.output is None:
+    if args_output is None:
         if title is None:
             raise ValueError("Must specify either --output or --title.")
         # Make movie directory
         os.makedirs(title, exist_ok=True)
         output_filepath = os.path.join(title, f"{title} [{res}].mp4")
     else:
-        output_filepath = cast(str,args.output)
+        output_filepath = args_output
 
 
     # Build ffmpeg command
