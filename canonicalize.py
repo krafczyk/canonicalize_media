@@ -155,18 +155,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # An input argument that takes a list of filepaths
 
-    _ = parser.add_argument("--output", "-o", help="The output file to write to.", required=True)
+    _ = parser.add_argument("--output", "-o", help="The output file to write to.", required=False)
     _ = parser.add_argument("--input", "-i", nargs="+", help="Input file(s), format is <filename>@@<Title>@@<Language> where the two extra fields are only relevant for extra audio/subtitle tracks.", required=True)
     _ = parser.add_argument("--title", "-t", help="The title of the movie to use", required=False)
-    _ = parser.add_argument("--res", "-r", help="The resolution category to use", required=True)
+    _ = parser.add_argument("--res", "-r", help="The resolution category to use", required=False)
     _ = parser.add_argument("--dry-run", help="Only construct the command, do not run it.", action="store_true")
     args = parser.parse_args()
 
     inputs: list[str] = cast(list[str], args.input)
-
-    res = cast(str, args.res)
-    if res not in ["480p", "720p", "1080p", "4K"]:
-        raise ValueError("Resolution must be one of 480p, 720p, 1080p, or 4K.")
 
     containers: list[MediaContainer] = []
 
@@ -229,6 +225,37 @@ if __name__ == "__main__":
     if len(video_streams) > 1:
         raise ValueError("Only one video stream is supported!")
 
+    res: str
+    if args.res is None:
+        # Guess resolution from video stream
+        vid_width = video_streams[0].width
+        if vid_width >= 3840:
+            res = "4K"
+        elif vid_width >= 1920:
+            res = "1080p"
+        elif vid_width >= 1280:
+            res = "720p"
+        elif vid_width >= 720:
+            res = "480p"
+        else:
+            raise ValueError("Video resolution is too low.")
+    else:
+        res = cast(str, args.res)
+        if res not in ["480p", "720p", "1080p", "4K"]:
+            raise ValueError("Resolution must be one of 480p, 720p, 1080p, or 4K.")
+
+    output_filepath: str
+    title: str | None = cast(str |None, args.title)
+    if args.output is None:
+        if title is None:
+            raise ValueError("Must specify either --output or --title.")
+        # Make movie directory
+        os.makedirs(title, exist_ok=True)
+        output_filepath = os.path.join(title, f"{title} [{res}].mp4")
+    else:
+        output_filepath = cast(str,args.output)
+
+
     # Build ffmpeg command
     ffmpeg_cmd = [ "ffmpeg" ]
     # Add input files
@@ -289,7 +316,6 @@ if __name__ == "__main__":
         ]
 
     # Add output file
-    output_filepath = cast(str,args.output)
     ffmpeg_cmd += [ output_filepath ]
 
     # Print the command
