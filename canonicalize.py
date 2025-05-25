@@ -71,14 +71,10 @@ def build_video_codec_args(vid: VideoStream, target_res: str) -> list[str]:
 
     # If we don't need to change codec, check that the stream is using the right level
     change_level = False
-    max_level = "5.1" if target_res in ("4K", ) else "4.1"
+    max_level = "5.1" if target_res in ("4K", "1080p") else "4.1"
     # Compare codec level using version number comparison
-    if target_res in ("480p", "720p", "1080p"):
-        if version_tuple(vid.level) > version_tuple(max_level):
-            change_level = True
-    else:
-        if version_tuple(vid.level) > version_tuple(max_level):
-            change_level = True
+    if version_tuple(vid.level) > version_tuple(max_level):
+        change_level = True
 
     if res_exact_match and not (reduce_quality or change_codec or change_level):
         print(f"Video can be copied without transcoding.")
