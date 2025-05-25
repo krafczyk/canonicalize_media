@@ -8,7 +8,7 @@ import json
 import os
 
 
-acceptable_subtitle_codecs = ['subrip', 'hdmv_pgs_subtitle']
+acceptable_subtitle_codecs = ['subrip', 'mov_text', 'hdmv_pgs_subtitle']
 
 
 width_map: dict[str, tuple[int,...]] = {
@@ -71,18 +71,29 @@ def build_video_codec_args(vid: VideoStream, target_res: str) -> list[str]:
 
     # If we don't need to change codec, check that the stream is using the right level
     change_level = False
+    max_level = "5.1" if target_res in ("4K", ) else "4.1"
     # Compare codec level using version number comparison
     if target_res in ("480p", "720p", "1080p"):
-        if version_tuple(vid.level) > version_tuple("4.1"):
+        if version_tuple(vid.level) > version_tuple(max_level):
             change_level = True
     else:
-        if version_tuple(vid.level) > version_tuple("5.1"):
+        if version_tuple(vid.level) > version_tuple(max_level):
             change_level = True
 
     if res_exact_match and not (reduce_quality or change_codec or change_level):
+        print(f"Video can be copied without transcoding.")
         return [ "-c:v", "copy" ]
     else:
         # We must transcode.
+        print(f"Video must be transcoded:")
+        if not res_exact_match:
+            print(f"  Resolution didn't match. Target: {target_res}, Video: {vid.width}x{vid.height}")
+        if reduce_quality:
+            print(f"  Quality reduction needed. Target bitrate: {max_bitrate_map[target_res]}k, Video bitrate: {vid.bit_rate}k")
+        if change_codec:
+            print(f"  Codec change needed. Video codec: {vid.codec}")
+        if change_level:
+            print(f"  Encoding level change needed. max level: {max_level}, Video level: {vid.level}")
 
         # Prefer hevc
         transcode_options: list[str] = []
@@ -263,7 +274,7 @@ if __name__ == "__main__":
     mkv_needed = False
 
     # Build ffmpeg command
-    ffmpeg_cmd = [ "ffmpeg" ]
+    ffmpeg_cmd = [ "ffmpeg", "-hide_banner"]
     # Add input files
     for cont in containers:
         ffmpeg_cmd += ["-i", cont.filepath ]
@@ -312,7 +323,7 @@ if __name__ == "__main__":
             ffmpeg_cmd += [ f"-c:s:{s_idx}", "copy" ]
         else:
             # Otherwise try to convert to mov_text
-            if not mkv_needed:
+            if not mkv_needed and s_stream.codec != "mov_text":
                 ffmpeg_cmd += [ f"-c:s:{s_idx}", "mov_text" ]
             else:
                 ffmpeg_cmd += [ f"-c:s:{s_idx}", "copy" ]
