@@ -83,7 +83,7 @@ def get_ffmpeg_streams(ffmpeg_data: FFmpegInfo) -> FFmpegStreams:
         elif stream['type'] == 'subtitle':
             streams['subtitle'].append(stream)
         else:
-            raise RuntimeError(f"Unexpected stream type: {stream['type']}")
+            print(f"WARNING: Skipping stream with unexpected type: {stream['type']}")
     return streams
 
 
