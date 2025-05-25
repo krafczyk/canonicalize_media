@@ -8,7 +8,7 @@ import json
 import os
 
 
-acceptable_subtitle_codecs = ['subrip']
+acceptable_subtitle_codecs = ['subrip', 'hdmv_pgs_subtitle']
 
 
 width_map: dict[str, tuple[int,...]] = {
@@ -248,6 +248,7 @@ if __name__ == "__main__":
     output_filepath: str
     args_output: str | None = cast(str | None, args.output)
     title: str | None = cast(str |None, args.title)
+    output_set_manually:bool = False
     if args_output is None:
         if title is None:
             raise ValueError("Must specify either --output or --title.")
@@ -256,7 +257,10 @@ if __name__ == "__main__":
         output_filepath = os.path.join(title, f"{title} [{res}].mp4")
     else:
         output_filepath = args_output
+        output_set_manually = True
 
+    # Some circumstances require mkv
+    mkv_needed = False
 
     # Build ffmpeg command
     ffmpeg_cmd = [ "ffmpeg" ]
@@ -290,23 +294,33 @@ if __name__ == "__main__":
     # Specify audio encoder
     ffmpeg_cmd += [ "-c:a", "copy" ]
 
+    # crash if we have an unsupported codec.
+    for s_stream in subtitle_streams:
+        if s_stream.codec == "hdmv_pgs_subtitle":
+            mkv_needed = True
+        if s_stream.codec not in acceptable_subtitle_codecs:
+            raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
+
     # Sort subtitle streams english streams first
-    subtitle_streams_sorted = sorted(subtitle_streams, key=lambda x: (x.language != "eng"))
+    subtitle_streams_sorted = sorted(subtitle_streams, key=lambda x: (x.language != "eng", acceptable_subtitle_codecs.index(x.codec)))
 
     s_idx = 0
     for s_stream in subtitle_streams_sorted:
-        if s_stream.codec not in acceptable_subtitle_codecs:
-            raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
         stream_id = filename_cont_map[s_stream.filepath].idx
         ffmpeg_cmd += [ "-map", f"{stream_id}:{s_stream.idx}" ]
+        if s_stream.codec == "hdmv_pgs_subtitle":
+            ffmpeg_cmd += [ f"-c:s:{s_idx}", "copy" ]
+        else:
+            # Otherwise try to convert to mov_text
+            if not mkv_needed:
+                ffmpeg_cmd += [ f"-c:s:{s_idx}", "mov_text" ]
+            else:
+                ffmpeg_cmd += [ f"-c:s:{s_idx}", "copy" ]
         if s_stream.language != "und":
             ffmpeg_cmd += [ f"-metadata:s:s:{s_idx}", f"language={s_stream.language}" ]
         if s_stream.title != "":
             ffmpeg_cmd += [ f"-metadata:s:s:{s_idx}", f"title={s_stream.title}" ]
         s_idx += 1
-
-    # Set subtitle codec
-    ffmpeg_cmd += [ "-c:s", "mov_text" ] # by default translate to mov_text
 
     # Set default streams
     ffmpeg_cmd += [
@@ -318,6 +332,11 @@ if __name__ == "__main__":
         ]
 
     # Add output file
+    if mkv_needed and ('mp4' in output_filepath):
+        if output_set_manually:
+            raise ValueError("Output file must be .mkv if subtitles are in hdmv_pgs_subtitle format.")
+        output_filepath = output_filepath.replace(".mp4", ".mkv")
+
     ffmpeg_cmd += [ output_filepath ]
 
     # Print the command
