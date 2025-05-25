@@ -1,0 +1,3 @@
+[submodule "vobsub2srt"]
+	path = VobSub2SRT
+	url = git@github.com:krafczyk/vobsub2srt
