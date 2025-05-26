@@ -19,6 +19,17 @@ width_map: dict[str, tuple[int,...]] = {
 }
 
 
+def is_res_match(width: int, target_res_widths: tuple[int,...]) -> bool:
+    """Compare the width of a video stream to the target resolution widths."""
+    is_match: bool = False
+    err: float = 0.01
+    for t_width in target_res_widths:
+        if (float(abs(width - t_width))/t_width) < err:
+            is_match = True
+            break
+    return is_match
+
+
 max_bitrate_map: dict[str, int] = {
     "480p": 1500,
     "720p": 3000,
@@ -44,20 +55,8 @@ supported_codecs = [
 
 
 def build_video_codec_args(vid: VideoStream, target_res: str) -> list[str]:
-    valid_stream_width = False
-    for width in width_map[target_res]:
-        if vid.width >= width:
-            valid_stream_width = True
-            break
-
-    if not valid_stream_width:
-        raise ValueError(f"Video resolution {vid.width} is lower than target resolution {target_res}.")
-
-    # Check if we need to downsize.
-    res_exact_match = False
-    for width in width_map[target_res]:
-        if vid.width == width:
-            res_exact_match = True
+    if not is_res_match(vid.width, width_map[target_res]):
+        raise ValueError(f"Video resolution {vid.width} doesn't match target resolution {target_res}.")
 
     # Check if we need to lower bitrate
     reduce_quality = False
@@ -76,14 +75,12 @@ def build_video_codec_args(vid: VideoStream, target_res: str) -> list[str]:
     if version_tuple(vid.level) > version_tuple(max_level):
         change_level = True
 
-    if res_exact_match and not (reduce_quality or change_codec or change_level):
+    if not (reduce_quality or change_codec or change_level):
         print(f"Video can be copied without transcoding.")
         return [ "-c:v", "copy" ]
     else:
         # We must transcode.
         print(f"Video must be transcoded:")
-        if not res_exact_match:
-            print(f"  Resolution didn't match. Target: {target_res}, Video: {vid.width}x{vid.height}")
         if reduce_quality:
             print(f"  Quality reduction needed. Target bitrate: {max_bitrate_map[target_res]}k, Video bitrate: {vid.bit_rate}k")
         if change_codec:
@@ -238,16 +235,16 @@ if __name__ == "__main__":
     if args_res is None:
         # Guess resolution from video stream
         vid_width = video_streams[0].width
-        if vid_width >= 3840:
-            res = "4K"
-        elif vid_width >= 1920:
-            res = "1080p"
-        elif vid_width >= 1280:
-            res = "720p"
-        elif vid_width >= 720:
-            res = "480p"
-        else:
-            raise ValueError("Video resolution is too low.")
+        target_res: str|None = None
+        for res_name, widths in width_map.items():
+            if is_res_match(vid_width, widths):
+                target_res = res_name
+                break
+
+        if target_res is None:
+            raise ValueError(f"Video resolution {vid_width} didn't match any known resolution")
+        print(f"Video resolution {vid_width} matched target resolution {target_res}.")
+        res = target_res
     else:
         if args_res not in ["480p", "720p", "1080p", "4K"]:
             raise ValueError("Resolution must be one of 480p, 720p, 1080p, or 4K.")
