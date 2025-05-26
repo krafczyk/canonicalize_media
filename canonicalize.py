@@ -166,6 +166,7 @@ if __name__ == "__main__":
     _ = parser.add_argument("--input", "-i", nargs="+", help="Input file(s), format is <filename>@@<Title>@@<Language> where the two extra fields are only relevant for extra audio/subtitle tracks.", required=True)
     _ = parser.add_argument("--title", "-t", help="The title of the movie to use", required=False)
     _ = parser.add_argument("--res", "-r", help="The resolution category to use", required=False)
+    _ = parser.add_argument("--copy-video", help="Copy the video stream. Skip Heuristic/Transcoding", action="store_true")
     _ = parser.add_argument("--dry-run", help="Only construct the command, do not run it.", action="store_true")
     args = parser.parse_args()
 
@@ -289,7 +290,11 @@ if __name__ == "__main__":
     ffmpeg_cmd += [ "-map_metadata", "0"]
 
     # Specify video encoder
-    ffmpeg_cmd += build_video_codec_args(video_streams[0], res)
+    copy_video: bool = cast(bool, args.copy_video)
+    if copy_video:
+        ffmpeg_cmd += [ "-c:v", "copy" ]
+    else:
+        ffmpeg_cmd += build_video_codec_args(video_streams[0], res)
 
     # Sort audio streams english streams first, 5.1 first
     audio_streams_sorted = sorted(audio_streams, key=lambda x: (x.language != "eng", x.channels != 6))
