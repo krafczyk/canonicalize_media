@@ -3,3 +3,5 @@ pydantic
 pymediainfo
 setuptools
 langcodes
+requests
+rapidfuzz
