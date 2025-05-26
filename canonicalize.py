@@ -160,7 +160,7 @@ if __name__ == "__main__":
     # An input argument that takes a list of filepaths
 
     _ = parser.add_argument("--output", "-o", help="The output file to write to.", required=False)
-    _ = parser.add_argument("--input", "-i", nargs="+", help="Input file(s), format is <filename>@@<Title>@@<Language> where the two extra fields are only relevant for extra audio/subtitle tracks.", required=True)
+    _ = parser.add_argument("--input", "-i", nargs="+", action="extend", help="Input file(s), format is <filename>@@<Title>@@<Language> where the two extra fields are only relevant for extra audio/subtitle tracks.", required=True)
     _ = parser.add_argument("--title", "-t", help="The title of the movie to use", required=False)
     _ = parser.add_argument("--res", "-r", help="The resolution category to use", required=False)
     _ = parser.add_argument("--copy-video", help="Copy the video stream. Skip Heuristic/Transcoding", action="store_true")
