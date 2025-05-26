@@ -8,7 +8,7 @@ import json
 import os
 
 
-acceptable_subtitle_codecs = ['subrip', 'mov_text', 'hdmv_pgs_subtitle']
+acceptable_subtitle_codecs = ['subrip', 'mov_text', 'hdmv_pgs_subtitle', 'dvd_subtitle']
 
 
 width_map: dict[str, tuple[int,...]] = {
@@ -305,6 +305,8 @@ if __name__ == "__main__":
     for s_stream in subtitle_streams:
         if s_stream.codec == "hdmv_pgs_subtitle":
             mkv_needed = True
+        if s_stream.codec == "dvd_subtitle":
+            mkv_needed = True
         if s_stream.codec not in acceptable_subtitle_codecs:
             raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
 
@@ -316,6 +318,8 @@ if __name__ == "__main__":
         stream_id = filename_cont_map[s_stream.filepath].idx
         ffmpeg_cmd += [ "-map", f"{stream_id}:{s_stream.idx}" ]
         if s_stream.codec == "hdmv_pgs_subtitle":
+            ffmpeg_cmd += [ f"-c:s:{s_idx}", "copy" ]
+        if s_stream.codec == "dvd_subtitle":
             ffmpeg_cmd += [ f"-c:s:{s_idx}", "copy" ]
         else:
             # Otherwise try to convert to mov_text
