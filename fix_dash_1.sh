@@ -32,7 +32,7 @@ done
 SEARCH_DIR="${1:-.}"
 
 # Supported extensions
-EXTENSIONS="mkv mp4 avi mov wmv flac iso"
+EXTENSIONS="mkv mp4 avi mov wmv flac iso json"
 
 # Find all files containing an en-dash
 find "$SEARCH_DIR" -type f -name "*–*" | while IFS= read -r src; do
