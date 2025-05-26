@@ -106,7 +106,7 @@ def candidate_pairs_from_path(path: str) -> Iterator[tuple[str, int | None]]:
     pieces: list[Path | str] = [stem] + list(p.parents)
     for raw in pieces:
         # 1) Split on dots, brackets, dashes, underscores, etc.
-        raw = cast(str, raw)
+        raw = str(raw)
         tokens = re.split(r"[.\-_()\[\]]+", raw)
         tokens = [t for t in tokens if t]
         # 2) Detect a year token (first one wins)
