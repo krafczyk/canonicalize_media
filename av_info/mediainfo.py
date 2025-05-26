@@ -63,8 +63,8 @@ class Video(BaseModel):
     DisplayAspectRatio: float
     FrameRate_Mode: str
     FrameRate: float | None = None
-    FrameRate_Num: int
-    FrameRate_Den: int
+    FrameRate_Num: int | None = None
+    FrameRate_Den: int | None = None
     FrameCount: int | None = None
     ColorSpace: str
     ChromaSubsampling: str
