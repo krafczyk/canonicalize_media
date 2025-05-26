@@ -353,7 +353,7 @@ if __name__ == "__main__":
             raise ValueError("Output file must be .mkv if subtitles are in hdmv_pgs_subtitle format.")
         output_filepath = output_filepath.replace(".mp4", ".mkv")
 
-    ffmpeg_cmd += [ output_filepath ]
+    ffmpeg_cmd += [ f"file:{output_filepath}" ]
 
     # Print the command
     print("ffmpeg command:")
