@@ -1,4 +1,4 @@
-from typing import TypedDict, Literal, NotRequired
+from typing import TypedDict, Literal, NotRequired, Required
 import sys
 import os
 import requests
@@ -18,10 +18,10 @@ MediaType = Literal["movie", "series", "episode"]
 
 
 class OMDbItem(TypedDict, total=False):
-    Title: str
-    Year: str              # still a string in OMDb JSON
-    imdbID: str
-    Type: MediaType
+    Title: Required[str]
+    Year: Required[str]              # still a string in OMDb JSON
+    imdbID: Required[str]
+    Type: Required[MediaType]
     Released: NotRequired[str]
     Runtime: NotRequired[str]
     Genre: NotRequired[str]

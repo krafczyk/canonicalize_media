@@ -3,6 +3,12 @@ import re
 from pathlib import Path
 import langcodes
 from langcodes import Language, tag_is_valid
+from collections.abc import Iterator
+from av_info.omdb import MediaType, OMDbItem, query_title, search_title
+from typing import cast
+import requests
+from rapidfuzz import fuzz, process
+from pprint import pprint
 
 
 def version_tuple(ver_str: str) -> tuple[int,...]:
@@ -82,4 +88,76 @@ def guess_lang_from_filename(path: str) -> str | None:
         except Exception:
             pass
 
+    return None
+
+
+_year_pat = re.compile(r"(19|20)\d{2}")
+
+def candidate_pairs_from_path(path: str) -> Iterator[tuple[str, int | None]]:
+    """
+    Yield (title, year) pairs with decreasing confidence.
+    Strategy:
+      • First line - folder or filename stripped of tags
+      • Optional year in parentheses / bare 4-digit token
+      • Gradually remove more noise.
+    """
+    p = Path(path)
+    stem = p.stem
+    pieces: list[Path | str] = [stem] + list(p.parents)
+    for raw in pieces:
+        # 1) Split on dots, brackets, dashes, underscores, etc.
+        raw = cast(str, raw)
+        tokens = re.split(r"[.\-_()\[\]]+", raw)
+        tokens = [t for t in tokens if t]
+        # 2) Detect a year token (first one wins)
+        yr: int | None = None
+        for t in tokens:
+            m = _year_pat.fullmatch(t)
+            if m:
+                yr = int(t)
+                tokens.remove(t)
+                break
+        # 3) Drop common "junk" tokens (resolution, codecs, release groups...)
+        junk = {"1080p", "720p", "2160p", "480p", "hdr", "webrip", "bluray",
+                "x264", "x265", "10bit", "yts", "yify", "dvdrip", "web",
+                "dl", "h264", "hevc"}
+        clean_tokens = [t for t in tokens if t.lower() not in junk]
+        if not clean_tokens:
+            continue
+        title = " ".join(clean_tokens)
+        yield title, yr
+
+# ---------------------------------------------------------------------------
+# 4. Orchestrator – search OMDb until something scores ≥ threshold
+# ---------------------------------------------------------------------------
+def find_best_match(
+    path: str,
+    *,
+    media_type: MediaType = "movie",
+    threshold: int = 90,
+    max_titles: int = 10,
+) -> OMDbItem | None:
+    session = requests.Session()
+    for title, yr in candidate_pairs_from_path(path):
+        # 1) direct hit first
+        data = query_title(title, yr, media_type, session=session)
+        if data:
+            return data
+        # 2) fall back to search list + fuzzy ranking
+        pool = search_title(title, yr, media_type, session=session)
+        if pool:
+            # highest token-set-ratio against pool
+            choices = {item["Title"]: item for item in pool}
+            best, score, _ = process.extractOne(
+                title, choices.keys(), scorer=fuzz.token_set_ratio)
+            if score >= threshold:
+                return choices[best]
+    return None
+
+
+def guess_imdb_id_from_media_file(filepath: str, media_type: MediaType = "movie") -> str | None:
+    res = find_best_match(filepath, media_type=media_type)
+    if res is not None:
+        pprint(res)
+        return res['imdbID']
     return None
