@@ -131,7 +131,7 @@ class Text(BaseModel):
     UniqueID: str | None = None
     Format: str
     CodecID: str | None = None
-    Duration: float
+    Duration: float | None = None
     Duration_Start: float | None = None
     Duration_End: float | None = None
     Compression_Mode: str | None = None
