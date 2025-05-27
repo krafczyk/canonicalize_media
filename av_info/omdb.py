@@ -1,4 +1,4 @@
-from typing import TypedDict, Literal, NotRequired, Required
+from typing import TypedDict, Literal, NotRequired, Required, cast
 import sys
 import os
 import requests
@@ -33,6 +33,8 @@ class OMDbItem(TypedDict, total=False):
     Poster: NotRequired[str]
     imdbRating: NotRequired[str]
     imdbVotes: NotRequired[str]
+    Season: NotRequired[str]
+    Episode: NotRequired[str]
     Ratings: NotRequired[list[dict[str, str]]]
     Response: str          # "True" / "False"
 
@@ -43,6 +45,8 @@ class OMDbItem(TypedDict, total=False):
 def query_title(
     title: str,
     year: int | None = None,
+    season: int | None = None,
+    episode: int | None = None,
     media_type: MediaType = "movie",
     *,
     api_key: str | None = None,
@@ -51,11 +55,19 @@ def query_title(
     if api_key is None:
         api_key = get_api_key()
 
+    if season is not None and episode is not None:
+        if media_type != "episode":
+            raise ValueError("If season and episode are provided, media_type must be 'episode'.")
+
     params: dict[str, str] = {"t": title, "apikey": api_key}
     if year:
         params["y"] = str(year)
     if media_type != "movie":
         params["type"] = media_type
+    if season:
+        params["Season"] = str(season)
+    if episode:
+        params["Epidode"] = str(episode)
     sess = session or requests
     resp = sess.get(OMDB_API_URL, params=params, timeout=10)
     data = resp.json() # pyright: ignore[reportAny]
@@ -88,4 +100,7 @@ def search_title(
         out.extend(r.get("Search", [])) # pyright: ignore[reportAny]
         if len(out) >= int(r.get("totalResults", len(out))): # pyright: ignore[reportAny]
             break
+    print(out)
     return out
+
+
