@@ -4,7 +4,7 @@ from pathlib import Path
 import langcodes
 from langcodes import Language, tag_is_valid
 from collections.abc import Iterator
-from av_info.omdb import MediaType, OMDbItem, query_title, search_title
+from av_info.omdb import MediaType, OMDbItem, query, search
 from typing import cast
 import requests
 from rapidfuzz import fuzz, process
@@ -133,18 +133,18 @@ def candidate_pairs_from_path(path: str) -> Iterator[tuple[str, int | None]]:
 def find_best_match(
     path: str,
     *,
-    media_type: MediaType = "movie",
+    media_type: MediaType | None = None,
     threshold: int = 90,
     max_titles: int = 10,
 ) -> OMDbItem | None:
     session = requests.Session()
     for title, yr in candidate_pairs_from_path(path):
         # 1) direct hit first
-        data = query_title(title, yr, media_type, session=session)
+        data = query(title=title, year=yr, media_type=media_type, session=session)
         if data:
             return data
         # 2) fall back to search list + fuzzy ranking
-        pool = search_title(title, yr, media_type, session=session)
+        pool = search(title=title, year=yr, media_type=media_type, session=session)
         if pool:
             # highest token-set-ratio against pool
             choices = {item["Title"]: item for item in pool}
@@ -155,9 +155,42 @@ def find_best_match(
     return None
 
 
-def guess_imdb_id_from_media_file(filepath: str, media_type: MediaType = "movie") -> str | None:
-    res = find_best_match(filepath, media_type=media_type)
-    if res is not None:
-        pprint(res)
-        return res['imdbID']
+def guess_imdb_id_from_media_file(filepath: str, media_type: MediaType | None = None) -> str | None:
+    # Progressively try to find a match using more of the filename. Start from the basename
+    result: OMDbItem | None = None
+
+    # Get last n elements of the path as a 'subpath'
+    def get_last_n_elements(path: str, n: int) -> str:
+        parts = Path(path).parts
+        return os.path.join(*parts[-n:]) if len(parts) >= n else path
+
+    # Start with only the last element of the path.
+    n = 1
+    total_parts = len(Path(filepath).parts)
+    partial_path: str = get_last_n_elements(filepath, n)
+    while result is None and n <= total_parts:
+        result = find_best_match(partial_path, media_type=media_type)
+        if result is not None:
+            break
+        n += 1
+        partial_path = get_last_n_elements(filepath, n)
+    if result is not None:
+        return result['imdbID']
     return None
+
+
+def ask_continue(prompt: str = "Continue? [N/y] ") -> bool:
+    """
+    Ask the user whether to continue.
+    Returns True only if the user enters 'y' or 'Y'.
+    Empty input or anything else is treated as 'no'.
+    """
+    while True:
+        reply = input(prompt).strip()          # read a line, strip whitespace
+        if not reply:                          # user just hit Enter → default = No
+            return False
+        if reply.lower() == "y":               # accepted affirmative
+            return True
+        if reply.lower() == "n":               # explicit negative
+            return False
+        print("Please enter 'y' or 'n'.")      # loop again for any other input

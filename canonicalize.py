@@ -1,7 +1,9 @@
 import argparse
 from av_info import MediaContainer
 from av_info.session import VideoStream, AudioStream, SubtitleStream
-from av_info.utils import version_tuple, guess_lang_from_filename
+from av_info.utils import version_tuple, guess_lang_from_filename, ask_continue, guess_imdb_id_from_media_file
+from av_info.omdb import query
+from av_info.plex import build_media_path
 from typing import cast
 import subprocess
 import json
@@ -158,11 +160,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     # An input argument that takes a list of filepaths
-
-    _ = parser.add_argument("--output", "-o", help="The output file to write to.", required=False)
     _ = parser.add_argument("--input", "-i", nargs="+", action="extend", help="Input file(s), format is <filename>@@<Title>@@<Language> where the two extra fields are only relevant for extra audio/subtitle tracks.", required=True)
-    _ = parser.add_argument("--title", "-t", help="The title of the movie to use", required=False)
-    _ = parser.add_argument("--res", "-r", help="The resolution category to use", required=False)
+    _ = parser.add_argument("--output", "-o", help="The output file to write to.")
+    _ = parser.add_argument("--imdb-id", help="The imdb id of this movie or show. It will be used to build the output filename if --title is not specified.", type=str, required=False)
+    _ = parser.add_argument("--title", "-t", help="The title of the movie to use")
+    _ = parser.add_argument("--res", "-r", help="The resolution category to use")
+    _ = parser.add_argument("--edition", "-e", help="Special 'editions' such as 'Extended'")
+    _ = parser.add_argument("--yes", help="Don't prompt user for confirmation.", action="store_true")
     _ = parser.add_argument("--copy-video", help="Copy the video stream. Skip Heuristic/Transcoding", action="store_true")
     _ = parser.add_argument("--dry-run", help="Only construct the command, do not run it.", action="store_true")
     args = parser.parse_args()
@@ -252,17 +256,46 @@ if __name__ == "__main__":
 
     output_filepath: str
     args_output: str | None = cast(str | None, args.output)
+    imdb_id: str | None = cast(str | None, args.imdb_id)
     title: str | None = cast(str |None, args.title)
     output_set_manually:bool = False
     if args_output is None:
-        if title is None:
-            raise ValueError("Must specify either --output or --title.")
-        # Make movie directory
-        os.makedirs(title, exist_ok=True)
-        output_filepath = os.path.join(title, f"{title} [{res}].mp4")
+        if imdb_id is not None:
+            if title is not None:
+                raise ValueError("Cannot specify both --imdb-id and --title.")
+            omdb_res = query(imdb_id=imdb_id)
+            if not omdb_res:
+                raise ValueError(f"Could not find movie with IMDB id {imdb_id}.")
+            output_filepath = str(build_media_path(
+                omdb_res,
+                ext="mp4",
+                resolution=res, 
+                edition=cast(str | None, args.edition)))
+        else:
+            # Guess IMDB id from the first video stream
+            imdb_id = guess_imdb_id_from_media_file(video_streams[0].filepath)
+            if not imdb_id:
+                raise ValueError(f"Could not guess IMDB id from video stream {video_streams[0].filepath}.")
+            omdb_res = query(imdb_id=imdb_id)
+            if not omdb_res:
+                raise ValueError(f"Could not find movie with IMDB id {imdb_id}.")
+            output_filepath = str(build_media_path(
+                omdb_res,
+                ext="mp4",
+                resolution=res, 
+                edition=cast(str | None, args.edition)))
+
     else:
         output_filepath = args_output
         output_set_manually = True
+
+    if not args.yes or not output_set_manually:
+        if not ask_continue("Proceed with output file: " + output_filepath + "?"):
+            print("Aborting.")
+            exit(1)
+
+    # Make output directory
+    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
 
     # Some circumstances require mkv
     mkv_needed = False
