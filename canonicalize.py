@@ -1,9 +1,9 @@
 import argparse
 from av_info import MediaContainer
 from av_info.session import VideoStream, AudioStream, SubtitleStream
-from av_info.utils import version_tuple, guess_lang_from_filename, ask_continue, guess_imdb_id_from_media_file
+from av_info.utils import version_tuple, guess_lang_from_filename, ask_continue
 from av_info.omdb import query
-from av_info.plex import build_media_path
+from av_info.plex import build_media_path, omdb_from_filename
 from typing import cast
 import subprocess
 import json
@@ -273,12 +273,10 @@ if __name__ == "__main__":
                 edition=cast(str | None, args.edition)))
         else:
             # Guess IMDB id from the first video stream
-            imdb_id = guess_imdb_id_from_media_file(video_streams[0].filepath)
-            if not imdb_id:
-                raise ValueError(f"Could not guess IMDB id from video stream {video_streams[0].filepath}.")
-            omdb_res = query(imdb_id=imdb_id)
+            omdb_res = omdb_from_filename(video_streams[0].filepath)
             if not omdb_res:
                 raise ValueError(f"Could not find movie with IMDB id {imdb_id}.")
+            print(f"Found match. {omdb_res['Title']} imdb_id: ({omdb_res['imdbID']})")
             output_filepath = str(build_media_path(
                 omdb_res,
                 ext="mp4",
