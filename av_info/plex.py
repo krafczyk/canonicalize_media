@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from av_info.omdb import OMDbItem
+from av_info.omdb import OMDbItem, query
 
 
 _ILLEGAL = re.compile(r'[\\/:*?"<>|]+')      # chars not allowed in filenames
@@ -22,64 +22,117 @@ def _first_year(year_field: str) -> str:
 
 def build_media_path(
     omdb: OMDbItem,
+    *,
     ext: str = "mkv",
     resolution: str | None = None,
     version: str | None = None,
     edition: str | None = None,
 ) -> Path:
     """
-    Return a Path for either a Movie, Series, or Episode JSON record.
+    Build a Plex-friendly path for a Movie, Series, or Episode.
 
     Parameters
     ----------
-    omdb        : dict  – OMDb reply already parsed with json.loads().
-    ext         : str   – default file-extension to append if none supplied.
-    resolution  : str   – optional  '1080p', '4K', etc. (movie files only).
-    version     : str   – optional  'HDR', 'BluRay', etc. (movie files only).
+    omdb        : OMDbItem | dict
+        JSON object returned from the OMDb API.
+    ext         : str
+        Desired filename extension (default ``"mkv"``).
+    resolution  : str | None
+        Optional resolution tag (e.g. ``"1080p"``, ``"4K"``).
+    version     : str | None
+        Optional extra tag such as ``"HDR"`` or ``"BluRay"``.
+    edition     : str | None
+        Edition/cut name (e.g. ``"Director's Cut"``). Added as
+        ``{edition-Director's Cut}`` per Plex naming.
 
     Returns
     -------
-    pathlib.Path object representing  <folders>/<filename>
+    pathlib.Path
+        ``<folders>/<filename>``
     """
     media_type = omdb.get("Type")
+
+    edition_part = f"{{edition-{_clean(edition)}}}" if edition else ""
+
+    # ------------------------------------------------------------------ #
+    # Movies
+    # ------------------------------------------------------------------ #
     if media_type == "movie":
         title = _clean(omdb["Title"])
-        year  = _first_year(omdb["Year"])
-        folder = Path(f"{title} ({year})")
+        year = _first_year(omdb["Year"])
 
-        filename = f"{title} ({year})"
-        if version:
-            filename += f" - {version}"
+        if edition:
+            folder = Path(f"{title} ({year}) {edition_part}")
+        else:
+            folder = Path(f"{title} ({year})")
+
+        # ---- filename ----
+        fn_parts: list[str] = [f"{title} ({year})"]
+
+        # Optional – order is important for Plex:
+        #  Title (Year) - 4K {edition-Director's Cut}.mkv
         if resolution:
-            filename += f" - {resolution}"
-        filename += f".{ext.lstrip('.')}"
+            fn_parts.append(resolution)
+
+        # Edition *must* be inside curly braces with the prefix
+        if edition:
+            fn_parts.append(edition_part)
+
+        filename = " - ".join(fn_parts) + f".{ext.lstrip('.')}"
         return folder / filename
 
-    # ---------------------------------------------------------------------
-    # Series and Episodes
-    # ---------------------------------------------------------------------
-    if media_type in {"series", "episode"}:
-        # For an episode JSON, SeriesTitle is present; for a series JSON, Title.
-        show_title = _clean(omdb.get("SeriesTitle") or omdb["Title"])
+    # ------------------------------------------------------------------ #
+    # Series (show record)
+    # ------------------------------------------------------------------ #
+    if media_type == "series":
+        series_title = _clean(omdb["Title"])
         first_year = _first_year(omdb["Year"])
-        show_dir   = Path(f"{show_title} ({first_year})")
+        return Path(f"{series_title} ({first_year})")
 
-        # If it's just the series record, stop here (no filename yet)
-        if media_type == "series":
-            return show_dir
+    # ------------------------------------------------------------------ #
+    # Episode
+    # ------------------------------------------------------------------ #
+    if media_type == "episode":
+        # 1)  Retrieve the parent-series info, favouring a live lookup.
+        series_id = omdb.get("seriesID")  # OMDb uses lowercase 'seriesID'
+        series_meta: OMDbItem | None = None
+        if not series_id:
+            raise ValueError("Episode record must contain 'seriesID' field.")
+        series_meta = query(imdb_id=series_id)
+        if not series_meta:
+            raise ValueError("Cannot find series metadata for episode.")
 
-        if 'Season' not in omdb or 'Episode' not in omdb:
-            raise ValueError("OMDb episode record must contain 'Season' and 'Episode' fields.")
+        series_title = _clean(series_meta["Title"])
+        first_year = _first_year(series_meta["Year"])
 
-        # Episode record ➜ build season/episode structure
-        season_num  = int(omdb["Season"])
+        # 2)  Validate required fields
+        if "Season" not in omdb or "Episode" not in omdb:
+            raise ValueError("Episode record must contain 'Season' and 'Episode' fields.")
+
+        season_num = int(omdb["Season"])
         episode_num = int(omdb["Episode"])
-        ep_title    = _clean(omdb["Title"])
+        ep_title = _clean(omdb["Title"])
 
-        season_dir  = show_dir / f"Season {season_num:02d}"
-        filename    = (
-            f"{show_title} - S{season_num:02d}E{episode_num:02d} - {ep_title}.{ext.lstrip('.')}"
-        )
+        show_name = Path(f"{series_title} ({first_year})")
+        season_dir = show_name / f"Season {season_num:02d}"
+
+        # ---- filename ----
+        fn_parts: list[str] = [ str(show_name) , f"s{season_num:02d}e{episode_num:02d}", ep_title ]
+
+        # Optional – order is important for Plex:
+        #  Title (Year) - 4K {edition-Director's Cut}.mkv
+        if resolution:
+            fn_parts.append(resolution)
+
+        # Edition *must* be inside curly braces with the prefix
+        if edition:
+            fn_parts.append(edition_part)
+
+        filename = " - ".join(fn_parts) + f".{ext.lstrip('.')}"
         return season_dir / filename
 
+    # ------------------------------------------------------------------ #
+    # Unsupported / unknown
+    # ------------------------------------------------------------------ #
     raise ValueError(f"Unsupported OMDb type: {media_type!r}")
+

@@ -49,7 +49,7 @@ class OMDbItem(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # 2. A thin client around the OMDb *by-title* and *search* endpoints
 # ---------------------------------------------------------------------------
-def query_title(
+def query(
     *,
     title: str | None = None,
     imdb_id: str | None = None,
@@ -152,7 +152,7 @@ def _search_pages(
             break
 
 
-def search_title(
+def search(
     *,
     title: str | None = None,
     imdb_id: str | None = None,
@@ -200,7 +200,7 @@ def search_title(
 
     # ------------ direct lookup by IMDb ID -----------------------------------
     if imdb_id:
-        single = query_title(imdb_id=imdb_id, api_key=api_key, session=sess)
+        single = query(imdb_id=imdb_id, api_key=api_key, session=sess)
         return [single] if single else []
 
     # ------------ paged title search -----------------------------------------

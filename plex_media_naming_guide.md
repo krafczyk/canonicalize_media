@@ -5,20 +5,23 @@
 ```
 /Movies
 └── <Movie_Title> (<Year>)/
-    ├── <Movie_Title> (<Year>).<ext>
-    ├── <Movie_Title> (<Year>) - <Resolution>.<ext>
-    ├── <Movie_Title> (<Year>) - <Version>.<ext>
-    └── <Movie_Title> (<Year>) {edition-<Edition_Name>} - <Resolution>.<ext>
+│   ├── <Movie_Title> (<Year>).<ext>
+│   ├── <Movie_Title> (<Year>) - <Resolution>.<ext>
+└── <Movie_Title> (<Year>) {edition-<Edition_Name>}/
+    └── <Movie_Title> (<Year>) - <Resolution> - {edition-<Edition_Name>}.<ext>
 
 /TV_Shows
 └── <Show_Name> (<First_Air_Year>)/
     ├── Season <Season_Num>/
-    │   ├── <Show_Name> - S<Season_Num>E<Episode_Num> - <Episode_Title>.<ext>
+    │   ├── <Show_Name> (<First_Air_Year) - s<Season_Num>e<Episode_Num> - <Episode_Title>.<ext>
+    │   ├── <Show_Name> (<First_AIr_Year) - s<Season_Num>e<Episode_Num> - <Episode_Title> - <Resolution>.<ext>
     │   └── …  
     ├── Specials/
-    │   └── <Show_Name> - S00E<Special_Num> - <Special_Title>.<ext>
+    │   └── <Show_Name> - s00e<Special_Num> - <Special_Title>.<ext>
     └── <Show_Name> - YYYY-MM-DD - <Episode_Title>.<ext>   # date-based series
 ```
+
+https://support.plex.tv/articles/naming-and-organizing-your-tv-show-files/
 
 ## Legend
 
