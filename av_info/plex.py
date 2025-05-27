@@ -68,6 +68,9 @@ def build_media_path(
         if media_type == "series":
             return show_dir
 
+        if 'Season' not in omdb or 'Episode' not in omdb:
+            raise ValueError("OMDb episode record must contain 'Season' and 'Episode' fields.")
+
         # Episode record ➜ build season/episode structure
         season_num  = int(omdb["Season"])
         episode_num = int(omdb["Episode"])
