@@ -8,6 +8,8 @@ from typing import cast
 import subprocess
 import json
 import os
+import sys
+from pprint import pprint
 
 
 acceptable_subtitle_codecs = ['subrip', 'mov_text', 'hdmv_pgs_subtitle', 'dvd_subtitle']
@@ -167,6 +169,7 @@ if __name__ == "__main__":
     _ = parser.add_argument("--res", "-r", help="The resolution category to use")
     _ = parser.add_argument("--edition", "-e", help="Special 'editions' such as 'Extended'")
     _ = parser.add_argument("--yes", help="Don't prompt user for confirmation.", action="store_true")
+    _ = parser.add_argument("--info", help="Activate info mode similar to calling ffprobe or mediainfo", action="store_true")
     _ = parser.add_argument("--copy-video", help="Copy the video stream. Skip Heuristic/Transcoding", action="store_true")
     _ = parser.add_argument("--dry-run", help="Only construct the command, do not run it.", action="store_true")
     args = parser.parse_args()
@@ -228,6 +231,16 @@ if __name__ == "__main__":
         audio_streams += file_cont.audio
         subtitle_streams += file_cont.subtitle
         idx += 1
+
+    if args.info:
+        print(f"Stream Summary:")
+        for vid_stream in video_streams:
+            pprint(vid_stream)
+        for aud_stream in audio_streams:
+            pprint(aud_stream)
+        for sub_stream in subtitle_streams:
+            pprint(sub_stream)
+        sys.exit(0)
 
     if len(video_streams) == 0:
         raise ValueError("No video streams found.")
