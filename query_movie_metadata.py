@@ -1,5 +1,5 @@
 import argparse
-from av_info.omdb import query_title
+from av_info.omdb import query
 from typing import cast
 from pprint import pprint
 
@@ -13,7 +13,7 @@ if __name__ == "__main__":
     _ = parser.add_argument("--type", type=str, help="Type of media")
     args = parser.parse_args()
 
-    query_response = query_title(
+    query_response = query(
         imdb_id=cast(str|None,args.imdb),
         title=cast(str,args.title),
         year=cast(int|None,args.year),
