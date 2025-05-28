@@ -225,7 +225,6 @@ def guess_omdb_from_path(
         )
 
         if series_search:
-            ic(series_title, series_search)
             series = _best_match(series_title, series_search) or series_search[0]
             series_id = series["imdbID"]
 
