@@ -58,8 +58,8 @@ supported_codecs = [
 ]
 
 
-def build_video_codec_args(vid: VideoStream, target_res: str) -> list[str]:
-    if not is_res_match(vid.width, width_map[target_res]):
+def build_video_codec_args(vid: VideoStream, target_res: str, force: bool=False) -> list[str]:
+    if not is_res_match(vid.width, width_map[target_res]) and not force:
         raise ValueError(f"Video resolution {vid.width} doesn't match target resolution {target_res}.")
 
     # Check if we need to lower bitrate
@@ -248,6 +248,9 @@ if __name__ == "__main__":
         raise ValueError("Only one video stream is supported!")
 
     args_res: str | None = cast(str | None, args.res)
+    force_res: bool = False
+    if args_res is not None:
+        force_res = True
     res: str
     if args_res is None:
         # Guess resolution from video stream
@@ -335,7 +338,7 @@ if __name__ == "__main__":
     if copy_video:
         ffmpeg_cmd += [ "-c:v", "copy" ]
     else:
-        ffmpeg_cmd += build_video_codec_args(video_streams[0], res)
+        ffmpeg_cmd += build_video_codec_args(video_streams[0], res, force_res)
 
     # Sort audio streams english streams first, 5.1 first
     audio_streams_sorted = sorted(audio_streams, key=lambda x: (x.language != "eng", x.channels != 6))
