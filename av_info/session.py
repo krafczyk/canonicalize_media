@@ -218,7 +218,7 @@ class MediaContainer:
                 codec,
                 channels,
                 bit_rate,
-                ms.Language,
+                ms.Language if ms.Language else fs.get('language', "und"),
                 fs.get('title', None)
             )
 

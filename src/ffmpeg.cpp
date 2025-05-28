@@ -134,6 +134,29 @@ static PyObject* ffmpeg(PyObject* self, PyObject* input_file) {
             if (!add_int_to_dict(stream_dict, "height", codecpar->height)) return cleanup();
         } else if (codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
             if (!add_int_to_dict(stream_dict, "bit_rate", codecpar->bit_rate)) return cleanup();
+
+            // language
+            AVDictionaryEntry *lang_tag = av_dict_get(stream->metadata, "language", NULL, 0);
+            const char* lang = lang_tag ? lang_tag->value : "und";
+            if (!add_str_to_dict(stream_dict, "language", lang)) return cleanup();
+
+            // title
+            AVDictionaryEntry *ttl = av_dict_get(stream->metadata, "title", nullptr, 0);
+            if (!ttl) ttl = av_dict_get(stream->metadata, "handler_name", nullptr, 0);
+            const char *title = ttl ? ttl->value : "";
+            if (!add_str_to_dict(stream_dict, "title", title)) return cleanup();
+
+            const char *codec_name  = avcodec_get_name(codecpar->codec_id);          // "ass", "webvtt", "hdmv_pgs_subtitle", …
+            const AVCodecDescriptor *desc = avcodec_descriptor_get(codecpar->codec_id);
+            const char *codec_long = desc ? desc->long_name : codec_name;            // "SSA/ASS subtitle", …
+            if (!add_str_to_dict(stream_dict, "codec",      codec_name))  return cleanup();
+            if (!add_str_to_dict(stream_dict, "codec_long", codec_long)) return cleanup();
+
+            // format (FourCC from codec_tag)
+            char tagbuf[AV_FOURCC_MAX_STRING_SIZE];
+            av_fourcc_make_string(tagbuf, codecpar->codec_tag);
+            // tagbuf now holds the four-character code + '\0'
+            if (!add_str_to_dict(stream_dict, "format", tagbuf)) return cleanup();
         } else if (codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
             // pull out language tag (e.g. "eng", "fra"), default to "und"
             AVDictionaryEntry *lang_tag = av_dict_get(stream->metadata, "language", NULL, 0);
