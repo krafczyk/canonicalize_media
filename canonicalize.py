@@ -276,7 +276,8 @@ if __name__ == "__main__":
             omdb_res = guess_omdb_from_path(video_streams[0].filepath)
             if not omdb_res:
                 raise ValueError(f"Could not find movie with IMDB id {imdb_id}.")
-            print(f"Found match. {omdb_res['Title']} imdb_id: ({omdb_res['imdbID']})")
+            title = omdb_res.get('Title', None)
+            print(f"Found match. [{omdb_res['Title']} ({omdb_res['Year']})] imdb_id: [{omdb_res['imdbID']}]")
             output_filepath = str(build_media_path(
                 omdb_res,
                 ext="mp4",
@@ -304,7 +305,6 @@ if __name__ == "__main__":
     for cont in containers:
         ffmpeg_cmd += ["-i", cont.filepath ]
 
-    title = cast(str, args.title)
     ffmpeg_cmd += [ "-metadata", f"title={title}" ] if title else []
 
     # Selected video stream
