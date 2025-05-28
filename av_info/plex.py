@@ -3,10 +3,9 @@ import os
 import difflib
 from pathlib import Path
 from av_info.omdb import OMDbItem, query, search, MediaType
-from typing import NamedTuple
+from typing import NamedTuple, Sequence, TypedDict
 
 
-#_ILLEGAL = re.compile(r'[\\/:*?"<>|]+')      # chars not allowed in filenames
 _ILLEGAL = re.compile(r'[\\*?"<>|]+')      # chars not allowed in filenames
 
 def _clean(text: str) -> str:
@@ -142,156 +141,176 @@ def build_media_path(
 
 
 # ---------------------------------------------------------------------------
-# Supporting functions for OMDb filename guessing
+# Regexes & constants
 # ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# 1.  Constants and quick-and-dirty helpers
-# ---------------------------------------------------------------------------
-
-COMMON_TAGS: set[str] = {
-    # video / audio formats
-    "x264", "x265", "h264", "hevc", "av1", "aac", "dts", "ddp", "atmos",
-    # resolutions / quality
-    "480p", "720p", "1080p", "2160p", "4k", "hdr", "hdr10", "hdr10+", "dv",
-    # release sources / cut names
-    "bluray", "blu-ray", "web", "webrip", "web-dl",
-    "yify", "yts", "rarbg", "ettv", "yts.mx",
-    "proper", "repack", "remux", "extended", "imax", "dc", "remastered",
-    # containers / misc
-    "mp4", "mkv", "avi"
+IMDB_RE      = re.compile(r"tt\d{7,8}")
+SEAS_EP_RE   = re.compile(r"[Ss](\d{1,2})[Ee](\d{1,2})")       # s03e12 / S3E2 / s03e02 etc.
+YEAR_RE      = re.compile(r"(19|20)\d{2}")
+NOISE_TOKENS = {
+    "720p","1080p","2160p","4k","hdr","dv","hevc","x264","x265","10bit","bluray",
+    "brrip","webrip","web","yify","yts","dd","dts","aac","hmax",
+    "extended","uncut"
 }
-_TAG_RX = re.compile(r"|".join(re.escape(t) for t in sorted(COMMON_TAGS, key=len, reverse=True)), re.I)
-_YEAR_RX = re.compile(r"\b(19|20)\d{2}\b")
-_SEASON_EP_RX = re.compile(r"[Ss](\d{1,2})[ ._-]?[Ee](\d{1,2})")
-
-def _clean_tokens(s: str) -> str:
-    s = _TAG_RX.sub(" ", s)                # drop technical tags
-    s = re.sub(r"[\[\]()._-]+", " ", s)    # unify delimiters
-    s = re.sub(r"\s{2,}", " ", s)          # squeeze spaces
-    return s.strip()
-
-def _title_similarity(a: str, b: str) -> float:
-    """Return ratio 0-100 using stdlib’s quick ratio."""
-    return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio() * 100
 
 # ---------------------------------------------------------------------------
-# 2.  Information we might extract from the filename
+# Helpers
 # ---------------------------------------------------------------------------
-
-class Guess(NamedTuple):
-    media_type: MediaType
-    title:      str
-    year:       int | None
-    season:     int | None
-    episode:    int | None
-
-def _first_int(match: re.Match[str] | None) -> int | None:
-    return int(match.group()) if match else None
-
-def _guess_from_path(path: Path) -> Guess:
+def _tokenize(path: Path) -> list[str]:
+    """Split dirname + basename on space, dot, underscore and dash."""
     stem = path.stem
-    parents = path.parents
+    parts = re.split(r"[.\s_\-]+", stem)
+    return [p for p in parts if p]
 
-    # --- Detect SxxEyy ------------------------------------------------------
-    se_match = _SEASON_EP_RX.search(stem)
-    if not se_match:                       # some rippers use "3x02"
-        se_match = re.search(r"(\d{1,2})x(\d{2})", stem)
-    if se_match:
-        season, ep = map(int, se_match.groups())
-        # try series title = directory one or two levels up, else cleaned stem
-        parent_titles = [
-            _clean_tokens(p.name) for p in (parents[0:2])
-            if p.name and not _YEAR_RX.search(p.name)
-        ]
-        title = max(parent_titles, key=len, default=_clean_tokens(stem.split(se_match.group(0))[0]))
-        return Guess("episode", title, None, season, ep)
+def _clean_tokens(tokens: Sequence[str]) -> list[str]:
+    return [t for t in tokens if t.lower() not in NOISE_TOKENS]
 
-    # --- Looks like a movie -------------------------------------------------
-    year_match = _YEAR_RX.search(stem)
-    year = int(year_match.group()) if year_match else None
-    before_year = stem[:year_match.start()] if year_match else stem
-    title = _clean_tokens(before_year)
-    return Guess("movie", title, year, None, None)
+def _best_match(
+    wanted: str,  # cleaned title we expect
+    candidates: Sequence[OMDbItem],
+    cutoff: float = 0.6,
+) -> OMDbItem | None:
+    """Pick the candidate whose Title is closest to 'wanted' (difflib ratio)."""
+    def score(item: OMDbItem) -> float:
+        return difflib.SequenceMatcher(None, wanted.lower(), item["Title"].lower()).ratio()
+    scored = sorted(((score(c), c) for c in candidates), reverse=True, key=lambda t: t[0])
+    return scored[0][1] if scored and scored[0][0] >= cutoff else None
 
 # ---------------------------------------------------------------------------
-# 3.  Main public function
+# The public helper
 # ---------------------------------------------------------------------------
-
-def omdb_from_filename(
-    filename: str | os.PathLike,
+def guess_omdb_from_path(
+    path_str: str,
     *,
     api_key: str | None = None,
-    session=None,                         # type: ignore[override]
-    fuzzy_threshold: float = 80.0,        # reject anything < threshold
+    session=None,
+    max_pages: int = 3,
 ) -> OMDbItem | None:
     """
-    Given one file path, return the single best OMDbItem (or None).
-    It starts with the most specific query and relaxes until it finds <= 1 hit.
+    Try to resolve `path_str` to exactly one OMDb entry.
+    Returns None on total failure.
     """
+    path      = Path(path_str)
+    tokens    = _tokenize(path)
+    imdb_id_m = IMDB_RE.search(path_str)
+    imdb_id   = imdb_id_m.group(0) if imdb_id_m else None
 
-    path = Path(filename)
-    g = _guess_from_path(path)
-
-    # --- 3a. Try a direct *query* first (exact title & year) ----------------
-    if g.media_type == "movie":
-        item = query(
-            title=g.title,
-            year=g.year,
-            media_type="movie",
-            api_key=api_key,
-            session=session,
-        )
-        if item is not None:
+    # -----------------------------------------------------------
+    # 1. Direct IMDb-ID lookup – the shortest path to success
+    # -----------------------------------------------------------
+    if imdb_id:
+        if item := query(imdb_id=imdb_id, api_key=api_key, session=session):
             return item
 
-    # --- 3b. Do a *search* and score results --------------------------------
-    # For a series episode we first find the series, then the episode
-    if g.media_type == "episode":
-        # 1. find the show’s seriesID via a ‘series’ search
-        hits = search(
-            title=g.title,
+    # -----------------------------------------------------------
+    # 2. Detect episode markers (SxxEyy)
+    # -----------------------------------------------------------
+    s_e_m = SEAS_EP_RE.search(path_str)
+    if s_e_m:
+        season, episode = map(int, s_e_m.groups())
+        # Heuristic: all tokens *before* the SxxEyy chunk form the series title
+        idx = tokens.index(s_e_m.group(0))
+        series_title_tokens = _clean_tokens(tokens[:idx])
+        series_title        = " ".join(series_title_tokens)
+        if not series_title:
+            # Fallback: parent directory often carries the series name
+            series_title = path.parent.stem.replace(".", " ").replace("_", " ")
+
+        # 2a. Find the series
+        series_search = search(
+            title=series_title,
             media_type="series",
             api_key=api_key,
             session=session,
-            max_pages=1,
+            max_pages=max_pages,
         )
-        if not hits:
-            return None
-        series = max(hits, key=lambda h: _title_similarity(h["Title"], g.title))
-        if _title_similarity(series["Title"], g.title) < fuzzy_threshold:
-            return None
 
-        # 2. now query the exact episode
-        ep = query(
-            imdb_id=series["imdbID"],
-            season=g.season,
-            episode=g.episode,
-            media_type="episode",
-            api_key=api_key,
-            session=session,
-        )
-        return ep
+        if series_search:
+            ic(series_title, series_search)
+            series = _best_match(series_title, series_search) or series_search[0]
+            series_id = series["imdbID"]
 
-    # Movie fallback: widen the search progressively (title only, then add dirs)
-    dirs = [p.name for p in path.parents if p.name]
-    for extra in [""] + dirs:                   # start with basename, then climb
-        search_title = f"{g.title} {extra}".strip()
-        hits = search(
-            title=search_title,
+            # 2b. Query for the episode
+            ep = query(
+                imdb_id=series_id,
+                season=season,
+                episode=episode,
+                api_key=api_key,
+                session=session,
+            )
+            if ep and ep.get("Response") == "True":
+                return ep
+
+        # If we got here, treat it as an *entire season* or miniseries
+        #       (rare edge-case) and fall through to the "series" flow below.
+        media_hint: MediaType | None = "series"
+    else:
+        media_hint = None  # we’ll decide next
+
+    # -----------------------------------------------------------
+    # 3. Movie / Series heuristics
+    # -----------------------------------------------------------
+    year_m   = YEAR_RE.search(path_str)
+    year     = int(year_m.group(0)) if year_m else None
+
+    if not media_hint:
+        # If pathname contains "Season", "Sxx", or lives under "TV Shows" dir
+        lowered = path_str.lower()
+        if any(k in lowered for k in ["season ", "/season", "s0", "tv shows"]):
+            media_hint = "series"
+        else:
+            media_hint = "movie"
+
+    # Build a candidate title: tokens up to the year (if any) or all tokens until first NOISE token
+    if year and str(year) in tokens:
+        idx = tokens.index(str(year))
+        title_tokens = _clean_tokens(tokens[:idx])
+    else:
+        title_tokens = _clean_tokens(tokens)
+    title = " ".join(title_tokens).strip()
+
+    if not title:
+        # Final fallback – use parent dir
+        title = path.parent.stem.replace(".", " ").replace("_", " ")
+
+    # -----------------------------------------------------------
+    # 3a. Try an exact query() first for movies
+    # -----------------------------------------------------------
+    if media_hint == "movie":
+        item = query(
+            title=title,
+            year=year,
             media_type="movie",
-            year=g.year,
             api_key=api_key,
             session=session,
-            max_pages=3,
         )
-        if not hits:
-            continue
-        # pick best fuzzy match
-        best = max(hits, key=lambda h: _title_similarity(h["Title"], g.title))
-        score = _title_similarity(best["Title"], g.title)
-        if score >= fuzzy_threshold:
-            return best
+        if item:
+            return item
 
+    # -----------------------------------------------------------
+    # 3b. Broader search() + fuzzy choose
+    # -----------------------------------------------------------
+    results = search(
+        title=title,
+        year=year,
+        media_type=media_hint,
+        api_key=api_key,
+        session=session,
+        max_pages=max_pages,
+    )
+    if results:
+        # First, prefer exact year match (when we have a year)
+        if year:
+            exact_year = [r for r in results if r.get("Year", "").startswith(str(year))]
+        else:
+            exact_year = []
+
+        pick_from = exact_year or results
+        best      = _best_match(title, pick_from) or pick_from[0]
+
+        # If it’s a series and we *really* wanted a whole-series match, we’re done.
+        return best
+
+    # -----------------------------------------------------------
+    # Total failure – give up
+    # -----------------------------------------------------------
     return None

@@ -101,8 +101,12 @@ def query(
     if episode is not None and season is None:
         raise ValueError("An episode number makes sense only together with a season")
 
-    if episode is not None and media_type != "episode":
-        raise ValueError("If 'episode' is given, media_type must be 'episode'")
+    if media_type is not None:
+        if episode is not None and media_type != "episode":
+            raise ValueError("If 'episode' is given, media_type must be 'episode'")
+    else:
+        if episode is not None:
+            media_type = "episode"
 
     # ------------------------------------------------------------------------
     api_key = api_key or get_api_key()
