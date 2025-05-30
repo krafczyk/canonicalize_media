@@ -1,7 +1,6 @@
 import argparse
-from av_info import MediaContainer
-from av_info.session import VideoStream, AudioStream, SubtitleStream
-from av_info.utils import version_tuple, guess_lang_from_filename, ask_continue
+from av_info.session import VideoStream, Session
+from av_info.utils import version_tuple, ask_continue
 from av_info.omdb import query
 from av_info.plex import build_media_path, guess_omdb_from_path
 from typing import cast
@@ -176,75 +175,21 @@ if __name__ == "__main__":
 
     inputs: list[str] = cast(list[str], args.input)
 
-    containers: list[MediaContainer] = []
+    session = Session(inputs)
 
-    # collate all streams
-    video_streams: list[VideoStream] = []
-    audio_streams: list[AudioStream] = []
-    subtitle_streams: list[SubtitleStream] = []
-
-    filename_cont_map: dict[str, MediaContainer] = {}
-    idx = 0
-    for i in inputs:
-        input_file = i
-        if '@@' in i:
-            input_file = i.split('@@')[0]
-
-        file_cont = MediaContainer(idx, input_file)
-        file_cont.analyze()
-        stream_lengths = (len(file_cont.video), len(file_cont.audio), len(file_cont.subtitle))
-        if len(file_cont.subtitle) == 1 and sum(stream_lengths) == 1:
-            # This is a single subtitle stream
-            sub_title: str
-            language: str
-            if '@@' in i:
-                title_components = i.split('@@')
-                if len(title_components) == 2:
-                    sub_title = title_components[1]
-                    l = guess_lang_from_filename(sub_title)
-                    if l is None:
-                        raise ValueError(f"Could not guess language from title {sub_title}")
-                    language = l
-                elif len(title_components) == 3:
-                    sub_title = title_components[1]
-                    language = title_components[2]
-                else:
-                    raise ValueError(f"Invalid input format: {i}. Expected <filename>@@<Title>@@<Language>")
-            else:
-                # Guess language from filename, use filename without extension as title
-                sub_title = os.path.splitext(os.path.basename(i))[0]
-                l = guess_lang_from_filename(i)
-                if l is None:
-                    raise ValueError(f"Could not guess language from filename {i}")
-                language = l
-            file_cont.subtitle[0].title = sub_title
-            file_cont.subtitle[0].language = language
-        if len(file_cont.audio) == 1 and sum(stream_lengths) == 1:
-            sub_title = i.split('@@')[1]
-            language = i.split('@@')[2]
-            file_cont.audio[0].title = sub_title
-            file_cont.audio[0].language = language
-        containers.append(file_cont)
-        filename_cont_map[file_cont.filepath] = file_cont
-
-        video_streams += file_cont.video
-        audio_streams += file_cont.audio
-        subtitle_streams += file_cont.subtitle
-        idx += 1
-
-    if args.info:
+    if cast(bool,args.info):
         print(f"Stream Summary:")
-        for vid_stream in video_streams:
+        for vid_stream in session.video_streams:
             pprint(vid_stream)
-        for aud_stream in audio_streams:
+        for aud_stream in session.audio_streams:
             pprint(aud_stream)
-        for sub_stream in subtitle_streams:
+        for sub_stream in session.subtitle_streams:
             pprint(sub_stream)
         sys.exit(0)
 
-    if len(video_streams) == 0:
+    if len(session.video_streams) == 0:
         raise ValueError("No video streams found.")
-    if len(video_streams) > 1:
+    if len(session.video_streams) > 1:
         raise ValueError("Only one video stream is supported!")
 
     args_res: str | None = cast(str | None, args.res)
@@ -254,7 +199,7 @@ if __name__ == "__main__":
     res: str
     if args_res is None:
         # Guess resolution from video stream
-        vid_width = video_streams[0].width
+        vid_width = session.video_streams[0].width
         target_res: str|None = None
         for res_name, widths in width_map.items():
             if is_res_match(vid_width, widths):
@@ -289,7 +234,7 @@ if __name__ == "__main__":
                 edition=cast(str | None, args.edition)))
         else:
             # Guess IMDB id from the first video stream
-            omdb_res = guess_omdb_from_path(video_streams[0].filepath)
+            omdb_res = guess_omdb_from_path(session.video_streams[0].filepath)
             if not omdb_res:
                 raise ValueError(f"Could not find movie with IMDB id {imdb_id}.")
             title = omdb_res.get('Title', None)
@@ -304,7 +249,7 @@ if __name__ == "__main__":
         output_filepath = args_output
         output_set_manually = True
 
-    if not args.yes or not output_set_manually:
+    if not cast(bool,args.yes) or not output_set_manually:
         if not ask_continue("Proceed with output file: " + output_filepath + "?"):
             print("Aborting.")
             exit(1)
@@ -318,13 +263,13 @@ if __name__ == "__main__":
     # Build ffmpeg command
     ffmpeg_cmd = [ "ffmpeg", "-hide_banner"]
     # Add input files
-    for cont in containers:
-        ffmpeg_cmd += ["-i", cont.filepath ]
+    for inp in inputs:
+        ffmpeg_cmd += ["-i", inp ]
 
     ffmpeg_cmd += [ "-metadata", f"title={title}" ] if title else []
 
     # Selected video stream
-    vid_cont = filename_cont_map[video_streams[0].filepath]
+    vid_cont = session.filename_cont_map[session.video_streams[0].filepath]
     stream_id = vid_cont.idx
     ffmpeg_cmd += [ "-map", f"{stream_id}:0" ]
 
@@ -338,20 +283,20 @@ if __name__ == "__main__":
     if copy_video:
         ffmpeg_cmd += [ "-c:v", "copy" ]
     else:
-        ffmpeg_cmd += build_video_codec_args(video_streams[0], res, force_res)
+        ffmpeg_cmd += build_video_codec_args(session.video_streams[0], res, force_res)
 
     # Sort audio streams english streams first, 5.1 first
-    audio_streams_sorted = sorted(audio_streams, key=lambda x: (x.language != "eng", x.channels != 6))
+    audio_streams_sorted = sorted(session.audio_streams, key=lambda x: (x.language != "eng" and x.language != "en", x.channels != 6))
 
     for a_stream in audio_streams_sorted:
-        stream_id = filename_cont_map[a_stream.filepath].idx
+        stream_id = session.filename_cont_map[a_stream.filepath].idx
         ffmpeg_cmd += [ "-map", f"{stream_id}:{a_stream.idx}" ]
 
     # Specify audio encoder
     ffmpeg_cmd += [ "-c:a", "copy" ]
 
     # crash if we have an unsupported codec.
-    for s_stream in subtitle_streams:
+    for s_stream in session.subtitle_streams:
         if s_stream.codec == "hdmv_pgs_subtitle":
             mkv_needed = True
         if s_stream.codec == "dvd_subtitle":
@@ -360,11 +305,11 @@ if __name__ == "__main__":
             raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
 
     # Sort subtitle streams english streams first
-    subtitle_streams_sorted = sorted(subtitle_streams, key=lambda x: (x.language != "eng", acceptable_subtitle_codecs.index(x.codec)))
+    subtitle_streams_sorted = sorted(session.subtitle_streams, key=lambda x: (x.language != "eng", acceptable_subtitle_codecs.index(x.codec)))
 
     s_idx = 0
     for s_stream in subtitle_streams_sorted:
-        stream_id = filename_cont_map[s_stream.filepath].idx
+        stream_id = session.filename_cont_map[s_stream.filepath].idx
         ffmpeg_cmd += [ "-map", f"{stream_id}:{s_stream.idx}" ]
         if s_stream.codec == "hdmv_pgs_subtitle":
             ffmpeg_cmd += [ f"-c:s:{s_idx}", "copy" ]
