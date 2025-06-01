@@ -384,6 +384,45 @@ if __name__ == "__main__":
         elif s_stream.codec == "dvd_subtitle":
             mkv_needed = True
             subtitle_map.append((s_stream, s_stream.codec))
+            if convert_subtitles and s_stream.language in ("eng", "en"):
+                # Convert VobSub subtitles to SRT
+                s_filename = s_stream.filepath
+                srt_filename = f"{s_filename}.{conv_id}.srt"
+                if not os.path.exists(srt_filename):
+                    stub_name = f"{s_filename}.{conv_id}"
+                    print(f"Encountered VobSub subtitle stream [{s_stream.title}] ({s_stream.idx})...")
+                    idx_filename = f"{stub_name}.idx"
+                    sub_filename = f"{stub_name}.sub"
+                    if not os.path.exists(idx_filename) or not os.path.exists(sub_filename):
+                        # Extract the VobSub subtitle
+                        print(f"Extracting to {stub_name}")
+                        # mkvextract tracks "$input_file" "$idx:$output_file"
+                        out = subprocess.run([
+                            "mkvextract", "tracks",
+                            s_stream.filepath,
+                            f"{s_stream.idx}:{stub_name}"], capture_output=True)
+                        if out.returncode != 0:
+                            raise ValueError(f"Failed to extract VobSub subtitle stream: {out.stderr.decode('utf-8')}")
+                    # Convert to SRT
+                    print(f"Converting to SRT")
+                    # ./VobSub2SRT/bin/vobsub2srt subtitle
+                    out = subprocess.run([
+                        "./VobSub2SRT/bin/vobsub2srt", stub_name
+                        ], capture_output=True)
+                    if out.returncode != 0:
+                        raise ValueError(f"Failed to convert VobSub subtitle to SRT: {out.stderr.decode('utf-8')}")
+                    # Remove the original SUP file
+                    os.remove(idx_filename)
+                    os.remove(sub_filename)
+                    if not os.path.exists(srt_filename):
+                        raise ValueError(f"Failed to convert VobSub subtitle to SRT: {srt_filename} does not exist.")
+                # Add the new SRT file to the session
+                srt_cont = session.add_file(srt_filename)
+                # Set the subtitle stream properties
+                srt_cont.subtitle[0].language = s_stream.language
+                srt_cont.subtitle[0].title = f"{s_stream.title} (OCR)"
+                subtitle_map.append((srt_cont.subtitle[0], srt_cont.subtitle[0].codec))
+                conv_id += 1
         elif s_stream.codec == "ass":
             mkv_needed = True
             subtitle_map.append((s_stream, s_stream.codec))
