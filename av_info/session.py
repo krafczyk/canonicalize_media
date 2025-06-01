@@ -121,7 +121,6 @@ def get_mediainfo_streams(mediainfo_data: MediaInfo) -> MediaInfoStreams:
 
 
 class MediaContainer:
-    idx: int
     filepath: str
     mediainfo: MediaInfo
     ffmpeg: FFmpegInfo
@@ -130,8 +129,7 @@ class MediaContainer:
     subtitle: list[SubtitleStream]
     menu: bool
 
-    def __init__(self, idx: int, filepath: str):
-        self.idx = idx
+    def __init__(self, filepath: str):
         self.filepath = filepath
         self.ffmpeg = ffmpeg(filepath)
         self.mediainfo = mediainfo(filepath)
@@ -272,56 +270,65 @@ class Session:
     subtitle_streams: list[SubtitleStream]
     filename_cont_map: dict[str, MediaContainer]
 
-    def __init__(self, inputs: list[str]):
+    def __init__(self, inputs: list[str] | None = None):
         # collate all streams
         self.video_streams = []
         self.audio_streams = []
         self.subtitle_streams = []
 
         self.filename_cont_map = {}
-        idx = 0
-        for i in inputs:
-            input_file = i
-            if '@@' in i:
-                input_file = i.split('@@')[0]
 
-            file_cont = MediaContainer(idx, input_file)
-            file_cont.analyze()
-            stream_lengths = (len(file_cont.video), len(file_cont.audio), len(file_cont.subtitle))
-            if len(file_cont.subtitle) == 1 and sum(stream_lengths) == 1:
-                # This is a single subtitle stream
-                sub_title: str
-                language: str
-                if '@@' in i:
-                    title_components = i.split('@@')
-                    if len(title_components) == 2:
-                        sub_title = title_components[1]
-                        l = guess_lang_from_filename(sub_title)
-                        if l is None:
-                            raise ValueError(f"Could not guess language from title {sub_title}")
-                        language = l
-                    elif len(title_components) == 3:
-                        sub_title = title_components[1]
-                        language = title_components[2]
-                    else:
-                        raise ValueError(f"Invalid input format: {i}. Expected <filename>@@<Title>@@<Language>")
-                else:
-                    # Guess language from filename, use filename without extension as title
-                    sub_title = os.path.splitext(os.path.basename(i))[0]
-                    l = guess_lang_from_filename(i)
+        if inputs is not None:
+            self.add_files(inputs)
+
+    def add_files(self, files: list[str]):
+        for f in files:
+            _ = self.add_file(f)
+
+    def add_file(self, filespec: str) -> MediaContainer:
+        input_file = filespec
+        if '@@' in filespec:
+            input_file = filespec.split('@@')[0]
+
+        file_cont = MediaContainer(input_file)
+        file_cont.analyze()
+
+        stream_lengths = (len(file_cont.video), len(file_cont.audio), len(file_cont.subtitle))
+        if len(file_cont.subtitle) == 1 and sum(stream_lengths) == 1:
+            # This is a single subtitle stream
+            sub_title: str
+            language: str
+            if '@@' in filespec:
+                title_components = filespec.split('@@')
+                if len(title_components) == 2:
+                    sub_title = title_components[1]
+                    l = guess_lang_from_filename(sub_title)
                     if l is None:
-                        raise ValueError(f"Could not guess language from filename {i}")
+                        raise ValueError(f"Could not guess language from title {sub_title}")
                     language = l
-                file_cont.subtitle[0].title = sub_title
-                file_cont.subtitle[0].language = language
-            if len(file_cont.audio) == 1 and sum(stream_lengths) == 1:
-                sub_title = i.split('@@')[1]
-                language = i.split('@@')[2]
-                file_cont.audio[0].title = sub_title
-                file_cont.audio[0].language = language
-            self.filename_cont_map[file_cont.filepath] = file_cont
+                elif len(title_components) == 3:
+                    sub_title = title_components[1]
+                    language = title_components[2]
+                else:
+                    raise ValueError(f"Invalid input format: {filespec}. Expected <filename>@@<Title>@@<Language>")
+            else:
+                # Guess language from filename, use filename without extension as title
+                sub_title = os.path.splitext(os.path.basename(filespec))[0]
+                l = guess_lang_from_filename(filespec)
+                if l is None:
+                    raise ValueError(f"Could not guess language from filename {filespec}")
+                language = l
+            file_cont.subtitle[0].title = sub_title
+            file_cont.subtitle[0].language = language
+        if len(file_cont.audio) == 1 and sum(stream_lengths) == 1:
+            sub_title = filespec.split('@@')[1]
+            language = filespec.split('@@')[2]
+            file_cont.audio[0].title = sub_title
+            file_cont.audio[0].language = language
+        self.filename_cont_map[file_cont.filepath] = file_cont
 
-            self.video_streams += file_cont.video
-            self.audio_streams += file_cont.audio
-            self.subtitle_streams += file_cont.subtitle
-            idx += 1
+        self.video_streams += file_cont.video
+        self.audio_streams += file_cont.audio
+        self.subtitle_streams += file_cont.subtitle
+
+        return file_cont
