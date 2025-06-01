@@ -162,6 +162,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # An input argument that takes a list of filepaths
     _ = parser.add_argument("--input", "-i", nargs="+", action="extend", help="Input file(s), format is <filename>@@<Title>@@<Language> where the two extra fields are only relevant for extra audio/subtitle tracks.", required=True)
+    _ = parser.add_argument("--staging-dir", help="Staging output directory to use.", type=str, required=False)
     _ = parser.add_argument("--output", "-o", help="The output file to write to.")
     _ = parser.add_argument("--imdb-id", help="The imdb id of this movie or show. It will be used to build the output filename if --title is not specified.", type=str, required=False)
     _ = parser.add_argument("--title", "-t", help="The title of the movie to use")
@@ -312,6 +313,11 @@ if __name__ == "__main__":
         if output_set_manually:
             raise ValueError("Output file must be .mkv if subtitles are in hdmv_pgs_subtitle format.")
         output_filepath = output_filepath.replace(".mp4", ".mkv")
+
+    # Add staging directory if specified
+    staging_dir: str | None = cast(str | None, args.staging_dir)
+    if staging_dir is not None:
+        output_filepath = os.path.join(staging_dir, output_filepath)
 
     yes: bool = cast(bool, args.yes)
 
