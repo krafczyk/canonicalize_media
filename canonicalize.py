@@ -15,7 +15,7 @@ acceptable_subtitle_codecs = ['subrip', 'mov_text', 'ass', 'hdmv_pgs_subtitle', 
 
 
 width_map: dict[str, tuple[int,...]] = {
-    "480p": (720,),
+    "480p": (640,),
     "720p": (1280,),
     "1080p": (1920,),
     "4K": (3840, 4096)
@@ -166,6 +166,8 @@ if __name__ == "__main__":
     _ = parser.add_argument("--output", "-o", help="The output file to write to.")
     _ = parser.add_argument("--imdb-id", help="The imdb id of this movie or show. It will be used to build the output filename if --title is not specified.", type=str, required=False)
     _ = parser.add_argument("--title", "-t", help="The title of the movie to use")
+    _ = parser.add_argument("--year", help="Override year in some circumstances", type=str, required=False)
+    _ = parser.add_argument("--skip-if-exists", help="Skip processing if the output file already exists.", action="store_true")
     _ = parser.add_argument("--res", "-r", help="The resolution category to use")
     _ = parser.add_argument("--edition", "-e", help="Special 'editions' such as 'Extended'")
     _ = parser.add_argument("--yes", help="Don't prompt user for confirmation.", action="store_true")
@@ -219,9 +221,9 @@ if __name__ == "__main__":
 
     output_filepath: str
     args_output: str | None = cast(str | None, args.output)
+    year = cast(str | None, args.year)
     imdb_id: str | None = cast(str | None, args.imdb_id)
     title: str | None = cast(str |None, args.title)
-    output_set_manually:bool = False
     if args_output is None:
         if imdb_id is not None:
             if title is not None:
@@ -236,9 +238,9 @@ if __name__ == "__main__":
                 edition=cast(str | None, args.edition)))
         else:
             # Guess IMDB id from the first video stream
-            omdb_res = guess_omdb_from_path(session.video_streams[0].filepath)
+            omdb_res = guess_omdb_from_path(session.video_streams[0].filepath, year=year)
             if not omdb_res:
-                raise ValueError(f"Could not find movie with IMDB id {imdb_id}.")
+                raise ValueError(f"Could not guess with filepath {session.video_streams[0].filepath}.")
             title = omdb_res.get('Title', None)
             print(f"Found match. [{omdb_res['Title']} ({omdb_res['Year']})] imdb_id: [{omdb_res['imdbID']}]")
             output_filepath = str(build_media_path(
@@ -249,7 +251,6 @@ if __name__ == "__main__":
 
     else:
         output_filepath = args_output
-        output_set_manually = True
 
     # Some circumstances require mkv
     mkv_needed = False
@@ -310,8 +311,6 @@ if __name__ == "__main__":
 
     # Handle output file extension validation
     if mkv_needed and ('mp4' in output_filepath):
-        if output_set_manually:
-            raise ValueError("Output file must be .mkv if subtitles are in hdmv_pgs_subtitle format.")
         output_filepath = output_filepath.replace(".mp4", ".mkv")
 
     # Add staging directory if specified
@@ -320,17 +319,24 @@ if __name__ == "__main__":
         output_filepath = os.path.join(staging_dir, output_filepath)
 
     yes: bool = cast(bool, args.yes)
+    skip_if_exists: bool = cast(bool, args.skip_if_exists)
 
     # Early user confirmation
-    if not yes or not output_set_manually:
+    if not yes:
         if not ask_continue("Proceed with output file: " + output_filepath + "?"):
             print("Aborting.")
             exit(1)
 
-    if not yes and os.path.exists(output_filepath):
-        if not ask_continue("Output file " + output_filepath + " exists, overwrite?"):
-            print("Aborting.")
-            exit(1)
+    if os.path.exists(output_filepath):
+        if skip_if_exists:
+            print(f"Output file {output_filepath} already exists. Skipping.")
+            exit(0)
+        if not yes:
+            if not ask_continue("Output file " + output_filepath + " exists, overwrite?"):
+                print("Aborting.")
+                exit(1)
+
+    print(f"Writing output to {output_filepath}")
 
     # Make output directory
     os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
@@ -355,12 +361,13 @@ if __name__ == "__main__":
                     if not os.path.exists(sup_filename):
                         # Extract the PGS subtitle
                         print(f"Extracting to {sup_filename}")
-                        out = subprocess.run([
+                        sup_command = [
                             "ffmpeg", "-hide_banner",
                             "-i", s_stream.filepath,
                             "-map", f"0:{s_stream.idx}",
                             "-c:s", "copy",
-                            sup_filename], capture_output=True)
+                            f"file:{sup_filename}"]
+                        out = subprocess.run(sup_command, capture_output=True)
                         if out.returncode != 0:
                             raise ValueError(f"Failed to extract PGS subtitle stream: {out.stderr.decode('utf-8')}")
                     # Convert to SRT
@@ -514,6 +521,6 @@ if __name__ == "__main__":
         }
 
         # replace the extension with .json
-        metadata_filepath = output_filepath.split(".")[0]+".json"
+        metadata_filepath = os.path.splitext(output_filepath)[0]+".json"
         with open(metadata_filepath, "w") as f:
             _ = f.write(json.dumps(metadata, indent=4))

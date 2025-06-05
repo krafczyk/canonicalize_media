@@ -146,6 +146,7 @@ def build_media_path(
 IMDB_RE      = re.compile(r"tt\d{7,8}")
 SEAS_EP_RE   = re.compile(r"[Ss](\d{1,2})[Ee](\d{1,2})")       # s03e12 / S3E2 / s03e02 etc.
 YEAR_RE      = re.compile(r"(19|20)\d{2}")
+YEAR_TOKEN   = re.compile(r"\(((19|20)\d{2})\)")
 NOISE_TOKENS = {
     "720p","1080p","2160p","4k","hdr","dv","hevc","x264","x265","10bit","bluray",
     "brrip","webrip","web","yify","yts","dd","dts","aac","hmax",
@@ -182,6 +183,7 @@ def guess_omdb_from_path(
     path_str: str,
     *,
     api_key: str | None = None,
+    year: str | None = None,
     session=None,
     max_pages: int = 3,
 ) -> OMDbItem | None:
@@ -210,15 +212,27 @@ def guess_omdb_from_path(
         # Heuristic: all tokens *before* the SxxEyy chunk form the series title
         idx = tokens.index(s_e_m.group(0))
         series_title_tokens = _clean_tokens(tokens[:idx])
-        series_title        = " ".join(series_title_tokens)
+        series_year_token = None
+        series_year = None
+        for i, token in enumerate(series_title_tokens):
+            # Remove any year token which may be present
+            if year_m := YEAR_TOKEN.fullmatch(token):
+                series_year_token = series_title_tokens.pop(i)
+                series_year = int(year_m.group(1))
+                break
+        # find and strip year token which may be present.
+        series_title = " ".join(series_title_tokens).strip()
         if not series_title:
             # Fallback: parent directory often carries the series name
             series_title = path.parent.stem.replace(".", " ").replace("_", " ")
 
+        if year is not None:
+            series_year = year
         # 2a. Find the series
         series_search = search(
             title=series_title,
             media_type="series",
+            year=series_year,
             api_key=api_key,
             session=session,
             max_pages=max_pages,
