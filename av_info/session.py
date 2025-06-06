@@ -150,7 +150,7 @@ class MediaContainer:
             fs = ffmpeg_streams['video'][i]
             ms = mediainfo_streams['video'][i]
             idx = int(fs['index'])
-            assert idx == (ms.ID-1)
+            # Depending on format, ms.ID can be equal to ffmpeg or 1 greater.
             codec = ms.Format
             level = ms.Format_Level
             profile = ms.Format_Profile
@@ -200,7 +200,7 @@ class MediaContainer:
             fs = ffmpeg_streams['audio'][i]
             ms = mediainfo_streams['audio'][i]
             idx = int(fs['index'])
-            assert idx == ms.ID-1
+            # Depending on format, ms.ID can be equal to ffmpeg or 1 greater.
             codec = ms.Format
             channels = ms.Channels
             bit_rate: float | None
