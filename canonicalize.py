@@ -167,6 +167,7 @@ if __name__ == "__main__":
     _ = parser.add_argument("--imdb-id", help="The imdb id of this movie or show. It will be used to build the output filename if --title is not specified.", type=str, required=False)
     _ = parser.add_argument("--title", "-t", help="The title of the movie to use")
     _ = parser.add_argument("--year", help="Override year in some circumstances", type=str, required=False)
+    _ = parser.add_argument("--series-id", help="Override series entry in some circumstances", type=str, required=False)
     _ = parser.add_argument("--skip-if-exists", help="Skip processing if the output file already exists.", action="store_true")
     _ = parser.add_argument("--res", "-r", help="The resolution category to use")
     _ = parser.add_argument("--edition", "-e", help="Special 'editions' such as 'Extended'")
@@ -222,6 +223,7 @@ if __name__ == "__main__":
     output_filepath: str
     args_output: str | None = cast(str | None, args.output)
     year = cast(str | None, args.year)
+    series_id = cast(str | None, args.series_id)
     imdb_id: str | None = cast(str | None, args.imdb_id)
     title: str | None = cast(str |None, args.title)
     if args_output is None:
@@ -238,7 +240,7 @@ if __name__ == "__main__":
                 edition=cast(str | None, args.edition)))
         else:
             # Guess IMDB id from the first video stream
-            omdb_res = guess_omdb_from_path(session.video_streams[0].filepath, year=year)
+            omdb_res = guess_omdb_from_path(session.video_streams[0].filepath, year=year, series_id=series_id)
             if not omdb_res:
                 raise ValueError(f"Could not guess with filepath {session.video_streams[0].filepath}.")
             title = omdb_res.get('Title', None)

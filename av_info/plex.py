@@ -184,6 +184,7 @@ def guess_omdb_from_path(
     *,
     api_key: str | None = None,
     year: str | None = None,
+    series_id: str | None = None,
     session=None,
     max_pages: int = 3,
 ) -> OMDbItem | None:
@@ -209,38 +210,41 @@ def guess_omdb_from_path(
     s_e_m = SEAS_EP_RE.search(path_str)
     if s_e_m:
         season, episode = map(int, s_e_m.groups())
-        # Heuristic: all tokens *before* the SxxEyy chunk form the series title
-        idx = tokens.index(s_e_m.group(0))
-        series_title_tokens = _clean_tokens(tokens[:idx])
-        series_year_token = None
-        series_year = None
-        for i, token in enumerate(series_title_tokens):
-            # Remove any year token which may be present
-            if year_m := YEAR_TOKEN.fullmatch(token):
-                series_year_token = series_title_tokens.pop(i)
-                series_year = int(year_m.group(1))
-                break
-        # find and strip year token which may be present.
-        series_title = " ".join(series_title_tokens).strip()
-        if not series_title:
-            # Fallback: parent directory often carries the series name
-            series_title = path.parent.stem.replace(".", " ").replace("_", " ")
+        series_search: list[OMDbItem] | None = None
+        if not series_id:
+            # Heuristic: all tokens *before* the SxxEyy chunk form the series title
+            idx = tokens.index(s_e_m.group(0))
+            series_title_tokens = _clean_tokens(tokens[:idx])
+            series_year_token = None
+            series_year = None
+            for i, token in enumerate(series_title_tokens):
+                # Remove any year token which may be present
+                if year_m := YEAR_TOKEN.fullmatch(token):
+                    series_year_token = series_title_tokens.pop(i)
+                    series_year = int(year_m.group(1))
+                    break
+            # find and strip year token which may be present.
+            series_title = " ".join(series_title_tokens).strip()
+            if not series_title:
+                # Fallback: parent directory often carries the series name
+                series_title = path.parent.stem.replace(".", " ").replace("_", " ")
 
-        if year is not None:
-            series_year = year
-        # 2a. Find the series
-        series_search = search(
-            title=series_title,
-            media_type="series",
-            year=series_year,
-            api_key=api_key,
-            session=session,
-            max_pages=max_pages,
-        )
+            if year is not None:
+                series_year = year
+            # 2a. Find the series
+            series_search = search(
+                title=series_title,
+                media_type="series",
+                year=series_year,
+                api_key=api_key,
+                session=session,
+                max_pages=max_pages,
+            )
 
-        if series_search:
-            series = _best_match(series_title, series_search) or series_search[0]
-            series_id = series["imdbID"]
+        if series_search or series_id:
+            if not series_id:
+                series = _best_match(series_title, series_search) or series_search[0]
+                series_id = series["imdbID"]
 
             # 2b. Query for the episode
             ep = query(

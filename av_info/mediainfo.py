@@ -37,12 +37,12 @@ class General(BaseModel):
 
 class Video(BaseModel):
     kind: Literal["Video"] = Field(alias='@type')
-    StreamOrder: int
+    StreamOrder: int | None = None
     ID: int
     UniqueID: str | None = None
     Format: str
-    Format_Profile: str
-    Format_Level: str
+    Format_Profile: str | None = None
+    Format_Level: str | None = None
     Format_Tier: str | None = None
     HDR_Format: str | None = None
     HDR_Format_Version: str | None = None
@@ -57,19 +57,19 @@ class Video(BaseModel):
     Width: int
     Height: int
     Stored_Height: int | None = None
-    Sampled_Width: int
-    Sampled_Height: int
+    Sampled_Width: int | None = None
+    Sampled_Height: int | None = None
     PixelAspectRatio: float
     DisplayAspectRatio: float
-    FrameRate_Mode: str
+    FrameRate_Mode: str | None = None
     FrameRate: float | None = None
     FrameRate_Num: int | None = None
     FrameRate_Den: int | None = None
     FrameCount: int | None = None
-    ColorSpace: str
-    ChromaSubsampling: str
+    ColorSpace: str | None = None
+    ChromaSubsampling: str | None = None
     ChromaSubsampling_Position: str | None = None
-    BitDepth: int
+    BitDepth: int | None = None
     Delay: float | None = None
     Delay_Source: str | None = None
     StreamSize: int | None = None
@@ -106,12 +106,12 @@ class Audio(BaseModel):
     Duration: float
     BitRate: int | None = None
     Channels: int
-    ChannelPositions: str
-    ChannelLayout: str
-    SamplesPerFrame: int
+    ChannelPositions: str | None = None
+    ChannelLayout: str | None = None
+    SamplesPerFrame: int | None = None
     SamplingRate: int
     SamplingCount: int
-    FrameRate: float
+    FrameRate: float | None = None
     FrameCount: int | None = None
     Compression_Mode: str
     Delay: float | None = None
