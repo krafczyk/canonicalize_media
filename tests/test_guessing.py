@@ -43,7 +43,7 @@ filepath_dict = {
 }
 
 # Expand this list whenever you implement a new backend
-PROVIDERS: list[ProviderSpec] = ["omdb"]
+PROVIDERS: list[ProviderSpec] = ["omdb", "tmdb"]
 
 
 def movie_equality(

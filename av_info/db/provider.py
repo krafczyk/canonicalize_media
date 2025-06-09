@@ -21,7 +21,7 @@ def get_provider(provider_spec: ProviderSpec) -> MetadataProvider:
         from av_info.db.omdb import OMDBProvider
         return OMDBProvider()
     elif provider_spec == "tmdb":
-        raise NotImplementedError("TMDB provider is not yet implemented")
-        #from av_info.db.tmdb import TMDBProvider
+        from av_info.db.tmdb import TMDBProvider
+        return TMDBProvider()
     else:
         raise RuntimeError("Unknown metadata provider issue.")
