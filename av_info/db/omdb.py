@@ -204,7 +204,6 @@ def search(
     list[dict]
         Zero or more raw-JSON items from OMDb.
     """
-    ic(title, imdb_id, year, season, episode, media_type, api_key, session, max_pages)
     api_key = api_key or get_api_key()
     sess = session or requests
 
@@ -229,13 +228,10 @@ def search(
     #if seriesID is not None:
     #    params["seriesID"] = seriesID
 
-    ic(params)
-
     # Flatten the generator of page dicts into one list of result items
     pages = _search_pages(sess, params, max_pages)
     results_iter = (page["Search"] for page in pages)                 # pyright: ignore[reportAny]
     results: list[dict] = list(itertools.chain.from_iterable(results_iter))
-    ic(results)
     return results
 
 
@@ -317,7 +313,6 @@ class OMDBProvider(MetadataProvider):
             year: str|None = None,
             season: str|None = None,
             episode: str|None = None) -> EpisodeInfo | None:
-        ic(series, uid, title, year, season, episode)
         if title is None:
             title = series.title
         if uid is None:
