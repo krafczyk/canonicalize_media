@@ -1,8 +1,8 @@
 import argparse
 from av_info.session import VideoStream, SubtitleStream, Session
 from av_info.utils import version_tuple, ask_continue
-from av_info.omdb import query
-from av_info.plex import build_media_path, guess_omdb_from_path
+from av_info.db import get_provider
+from av_info.plex import build_media_path, guess
 from typing import cast
 import subprocess
 import json
@@ -164,10 +164,10 @@ if __name__ == "__main__":
     _ = parser.add_argument("--input", "-i", nargs="+", action="extend", help="Input file(s), format is <filename>@@<Title>@@<Language> where the two extra fields are only relevant for extra audio/subtitle tracks.", required=True)
     _ = parser.add_argument("--staging-dir", help="Staging output directory to use.", type=str, required=False)
     _ = parser.add_argument("--output", "-o", help="The output file to write to.")
-    _ = parser.add_argument("--imdb-id", help="The imdb id of this movie or show. It will be used to build the output filename if --title is not specified.", type=str, required=False)
+    _ = parser.add_argument("--uid", help="The unique id of this movie or show. It will be used to build the output filename if --title is not specified.", type=str, required=False)
     _ = parser.add_argument("--title", "-t", help="The title of the movie to use")
     _ = parser.add_argument("--year", help="Override year in some circumstances", type=str, required=False)
-    _ = parser.add_argument("--series-id", help="Override series entry in some circumstances", type=str, required=False)
+    _ = parser.add_argument("--series-uid", help="Override series entry in some circumstances", type=str, required=False)
     _ = parser.add_argument("--skip-if-exists", help="Skip processing if the output file already exists.", action="store_true")
     _ = parser.add_argument("--res", "-r", help="The resolution category to use")
     _ = parser.add_argument("--edition", "-e", help="Special 'editions' such as 'Extended'")
@@ -175,6 +175,7 @@ if __name__ == "__main__":
     _ = parser.add_argument("--info", help="Activate info mode similar to calling ffprobe or mediainfo", action="store_true")
     _ = parser.add_argument("--convert-advanced-subtitles", help="Convert 'advanced' subtitle formats such as image based formats and .ass format.", action="store_true")
     _ = parser.add_argument("--copy-video", help="Copy the video stream. Skip Heuristic/Transcoding", action="store_true")
+    _ = parser.add_argument("--metadata-provider", help="Metadat provider to use", default="omdb", type=str)
     _ = parser.add_argument("--dry-run", help="Only construct the command, do not run it.", action="store_true")
     args = parser.parse_args()
 
@@ -223,30 +224,39 @@ if __name__ == "__main__":
     output_filepath: str
     args_output: str | None = cast(str | None, args.output)
     year = cast(str | None, args.year)
-    series_id = cast(str | None, args.series_id)
-    imdb_id: str | None = cast(str | None, args.imdb_id)
+    series_uid = cast(str | None, args.series_uid)
+    uid: str | None = cast(str | None, args.uid)
     title: str | None = cast(str |None, args.title)
+    provider = get_provider(cast(str,args.metadata_provider))
+
     if args_output is None:
-        if imdb_id is not None:
+        if uid is not None:
             if title is not None:
                 raise ValueError("Cannot specify both --imdb-id and --title.")
-            omdb_res = query(imdb_id=imdb_id)
-            if not omdb_res:
-                raise ValueError(f"Could not find movie with IMDB id {imdb_id}.")
+            guessed_media = guess("", uid=uid, provider=provider)
+            if not guessed_media:
+                raise ValueError(f"Could not find movie with uid {uid}.")
             output_filepath = str(build_media_path(
-                omdb_res,
+                guessed_media,
                 ext="mp4",
                 resolution=res, 
                 edition=cast(str | None, args.edition)))
         else:
-            # Guess IMDB id from the first video stream
-            omdb_res = guess_omdb_from_path(session.video_streams[0].filepath, year=year, series_id=series_id)
-            if not omdb_res:
-                raise ValueError(f"Could not guess with filepath {session.video_streams[0].filepath}.")
-            title = omdb_res.get('Title', None)
-            print(f"Found match. [{omdb_res['Title']} ({omdb_res['Year']})] imdb_id: [{omdb_res['imdbID']}]")
+            guessed_media = guess(
+                session.video_streams[0].filepath,
+                uid=uid,
+                title=title,
+                year=year,
+                series_uid=series_uid)
+
+            if not guessed_media:
+                print(f"Could not guess with filepath {session.video_streams[0].filepath}.")
+                sys.exit(1)
+
+            title = guessed_media.title
+            print(f"Found match. [{guessed_media.title} ({guessed_media.year})] imdb_id: [{guessed_media.uid}]")
             output_filepath = str(build_media_path(
-                omdb_res,
+                guessed_media,
                 ext="mp4",
                 resolution=res, 
                 edition=cast(str | None, args.edition)))
