@@ -178,8 +178,8 @@ def guess_series(
         series_search: list[SeriesInfo] | None = None
 
         # Heuristic: all tokens *before* the SxxEyy chunk form the series title
-        idx = tokens.index(s_e_m.group(0))
-        series_title_tokens = clean_tokens(tokens[:idx])
+        idx = tokens[-1].index(s_e_m.group(0))
+        series_title_tokens = clean_tokens(tokens[-1][:idx])
         series_year_token = None
         series_year = None
         for i, token in enumerate(series_title_tokens):
@@ -300,14 +300,14 @@ def guess_movie(
     # Build a candidate title: tokens up to the year (if any) or all tokens until first NOISE token
     # first, find the last year token in the path
     idx = None
-    for i, token in enumerate(tokens):
+    for i, token in enumerate(tokens[-1]):
         if year_m := YEAR_RE.fullmatch(token):
             idx = i
 
     if idx:
-        title_tokens = clean_tokens(tokens[:idx])
+        title_tokens = clean_tokens(tokens[-1][:idx])
     else:
-        title_tokens = clean_tokens(tokens)
+        title_tokens = clean_tokens(tokens[-1])
 
     # Check if the last token is a year specifier
     year_token_val = None

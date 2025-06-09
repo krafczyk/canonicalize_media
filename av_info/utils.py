@@ -124,11 +124,19 @@ def first_year(year_field: str) -> str:
         raise ValueError(f"Cannot parse year from {year_field!r}")
     return m.group()
 
-def tokenize(path: Path) -> list[str]:
-    """Split dirname + basename on space, dot, underscore and dash."""
-    stem = path.stem
-    parts = re.split(r"[.\s_\-]+", stem)
-    return [p for p in parts if p]
+def tokenize(path: Path) -> list[list[str]]:
+    """Split each path segment (dirs + filename without extension) on space, doct, underscore and dash."""
+    # 1. Remove the extension from the final segment
+    no_ext = path.with_suffix('')
+    # 2. Build a list of the segments, skipping root (Unix "/") or drive letters (Windows "C:\\")
+    segments = [
+        seg for seg in no_ext.parts
+        if seg not in (path.root, path.drive)]
+
+    return [
+        [ tok for tok in re.split(r"[.\s_\-]+", seg) if tok ]
+        for seg in segments
+    ]
 
 def clean_tokens(tokens: Sequence[str]) -> list[str]:
     return [t for t in tokens if t.lower() not in NOISE_TOKENS]
