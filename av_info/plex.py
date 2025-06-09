@@ -444,4 +444,5 @@ def guess(
         uid=uid,
         title=title,
         verbose=verbose,
+        provider=provider,
         year=year)

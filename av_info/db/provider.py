@@ -12,7 +12,7 @@ def get_provider(provider_spec: ProviderSpec) -> MetadataProvider:
     if isinstance(provider_spec, MetadataProvider):
         return provider_spec
 
-    known_providers = [ 'omdb', 'tmdb' ]
+    known_providers = [ 'omdb', 'tmdb', 'tvdb' ]
 
     if provider_spec not in known_providers:
         raise ValueError(f"{provider_spec} not in the list of known providers: {known_providers}")
@@ -23,5 +23,8 @@ def get_provider(provider_spec: ProviderSpec) -> MetadataProvider:
     elif provider_spec == "tmdb":
         from av_info.db.tmdb import TMDBProvider
         return TMDBProvider()
+    elif provider_spec == "tvdb":
+        from av_info.db.tvdb import TVDBProvider
+        return TVDBProvider()
     else:
         raise RuntimeError("Unknown metadata provider issue.")
