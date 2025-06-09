@@ -247,7 +247,8 @@ if __name__ == "__main__":
                 uid=uid,
                 title=title,
                 year=year,
-                series_uid=series_uid)
+                series_uid=series_uid,
+                provider=provider)
 
             if not guessed_media:
                 print(f"Could not guess with filepath {session.video_streams[0].filepath}.")
