@@ -298,12 +298,27 @@ def guess_movie(
         uid = imdb_id_m.group(0) if imdb_id_m else None
 
     # Build a candidate title: tokens up to the year (if any) or all tokens until first NOISE token
-    if year in tokens:
-        idx = tokens.index(str(year))
+    # first, find the last year token in the path
+    idx = None
+    for i, token in enumerate(tokens):
+        if year_m := YEAR_RE.fullmatch(token):
+            idx = i
+
+    if idx:
         title_tokens = clean_tokens(tokens[:idx])
     else:
         title_tokens = clean_tokens(tokens)
-    title = " ".join(title_tokens).strip()
+
+    # Check if the last token is a year specifier
+    year_token_val = None
+    if year_m := YEAR_TOKEN.fullmatch(title_tokens[-1]):
+        year_token_val = year_m.group(1)
+
+    if not year:
+        year = year_token_val
+
+    if not title:
+        title = " ".join(title_tokens).strip()
 
     results = provider.search_movie(
         uid=uid,
@@ -372,7 +387,6 @@ def guess(
         series_year=series_year,
         provider=provider,
     )
-
     if ep:
         return ep
 
