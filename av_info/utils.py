@@ -1,14 +1,9 @@
-import os
 import re
 from pathlib import Path
 import langcodes
 from langcodes import Language, tag_is_valid
-from collections.abc import Iterator
-from av_info.omdb import MediaType, OMDbItem, query, search
-from typing import cast
-import requests
-from rapidfuzz import fuzz, process
-from pprint import pprint
+from collections.abc import Sequence
+import unicodedata
 
 
 def version_tuple(ver_str: str) -> tuple[int,...]:
@@ -106,3 +101,89 @@ def ask_continue(prompt: str = "Continue? [N/y] ") -> bool:
         if reply.lower() == "n":               # explicit negative
             return False
         print("Please enter 'y' or 'n'.")      # loop again for any other input
+
+
+_ILLEGAL = re.compile(r'[\\*?"<>|]+')      # chars not allowed in filenames
+NOISE_TOKENS = {
+    "720p","1080p","2160p","4k","hdr","dv","hevc","x264","x265","10bit","bluray",
+    "brrip","webrip","web","yify","yts","dd","dts","aac","hmax",
+    "extended","uncut"
+}
+
+def clean(text: str) -> str:
+    """Strip illegal filesystem characters and extra whitespace."""
+    return _ILLEGAL.sub('', text).strip()
+
+def first_year(year_field: str) -> str:
+    """
+    OMDb's Year can be '2020', '2011–2019', '2024–', etc.
+    Grab the first 4-digit run.
+    """
+    m = re.search(r'\d{4}', year_field or '')
+    if not m:
+        raise ValueError(f"Cannot parse year from {year_field!r}")
+    return m.group()
+
+def tokenize(path: Path) -> list[str]:
+    """Split dirname + basename on space, dot, underscore and dash."""
+    stem = path.stem
+    parts = re.split(r"[.\s_\-]+", stem)
+    return [p for p in parts if p]
+
+def clean_tokens(tokens: Sequence[str]) -> list[str]:
+    return [t for t in tokens if t.lower() not in NOISE_TOKENS]
+
+# ---- 1.  Declare your substitutions here ----------------------------
+#
+#   • Keys are regex patterns (use raw strings, ^/$ anchors unnecessary).
+#   • Values are the canonical form you want that pattern replaced with.
+#
+#   Put every variant of a word/symbol on the *left* and its
+#   single canonical representative on the *right*.
+#
+DEFAULT_SUBS: dict[str, str] = {
+    r"&": "and",               # symbol to word
+    r"\band\b": "and",         # word to word (ensures whole-word match)
+    r"’": "'",                 # curly apostrophe to straight
+    r"—|–": "-",               # em/en dash to hyphen
+    r"\s*\(\s*the\s*\)\s*": " ",  # scrub trailing/leading "(The)"
+    # add more as you encounter them…
+}
+
+# Pre-compile patterns once for speed.
+_SUB_PATTERNS = [(re.compile(pat, flags=re.IGNORECASE), repl)
+                 for pat, repl in DEFAULT_SUBS.items()]
+
+# Characters we simply erase (punctuation that rarely changes semantics)
+_PUNCT_TABLE = str.maketrans("", "", r"""!"#$%()*+,./:;?@[\]^_`{|}~""")
+
+# ---- 2.  Normalisation routine --------------------------------------
+def normalise_title(title: str, extra_subs: dict[str, str] | None = None) -> str:
+    """
+    Return a canonical representation of *title* suitable for equality tests.
+    Supply *extra_subs* to add/override substitution rules at call-time.
+    """
+    # a.  Unicode → closest ASCII (e.g. “Pokémon” → “Pokemon”)
+    t = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+
+    # b.  Lower-case & collapse runs of whitespace
+    t = re.sub(r"\s+", " ", t.lower())
+
+    # c.  Apply core and caller-supplied substitution rules
+    patterns = _SUB_PATTERNS.copy()
+    if extra_subs:
+        patterns += [(re.compile(p, re.I), r) for p, r in extra_subs.items()]
+
+    for pat, repl in patterns:
+        t = pat.sub(repl, t)
+
+    # d.  Strip punctuation we don’t care about
+    t = t.translate(_PUNCT_TABLE)
+
+    # e.  Final tidy-up
+    return t.strip()
+
+# ---- 3.  Convenience wrapper ----------------------------------------
+def titles_equal(a: str, b: str, extra_subs: dict[str,str] | None = None) -> bool:
+    """Case/format-insensitive comparison of two media titles."""
+    return normalise_title(a, extra_subs=extra_subs) == normalise_title(b, extra_subs=extra_subs)

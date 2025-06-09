@@ -1,30 +1,14 @@
 import re
-import os
-import difflib
+#import difflib
 from pathlib import Path
-from av_info.omdb import OMDbItem, query, search, MediaType
-from typing import NamedTuple, Sequence, TypedDict
-
-
-_ILLEGAL = re.compile(r'[\\*?"<>|]+')      # chars not allowed in filenames
-
-def _clean(text: str) -> str:
-    """Strip illegal filesystem characters and extra whitespace."""
-    return _ILLEGAL.sub('', text).strip()
-
-def _first_year(year_field: str) -> str:
-    """
-    OMDb's Year can be '2020', '2011–2019', '2024–', etc.
-    Grab the first 4-digit run.
-    """
-    m = re.search(r'\d{4}', year_field or '')
-    if not m:
-        raise ValueError(f"Cannot parse year from {year_field!r}")
-    return m.group()
+from av_info.db import ProviderSpec, BaseInfo, MovieInfo, SeriesInfo, EpisodeInfo, get_provider
+from av_info.utils import clean, clean_tokens, tokenize, titles_equal
+from av_info.utils import first_year as _first_year
+#from collections.abc import Sequence
 
 
 def build_media_path(
-    omdb: OMDbItem,
+    media: BaseInfo,
     *,
     ext: str = "mkv",
     resolution: str | None = None,
@@ -53,16 +37,16 @@ def build_media_path(
     pathlib.Path
         ``<folders>/<filename>``
     """
-    media_type = omdb.get("Type")
+    edition_part = f"{{edition-{clean(edition)}}}" if edition else ""
 
-    edition_part = f"{{edition-{_clean(edition)}}}" if edition else ""
+    fn_parts: list[str]
 
     # ------------------------------------------------------------------ #
     # Movies
     # ------------------------------------------------------------------ #
-    if media_type == "movie":
-        title = _clean(omdb["Title"])
-        year = _first_year(omdb["Year"])
+    if isinstance(media, MovieInfo):
+        title = clean(media.title)
+        year = _first_year(media.year)
 
         if edition:
             folder = Path(f"{title} ({year}) {edition_part}")
@@ -70,7 +54,7 @@ def build_media_path(
             folder = Path(f"{title} ({year})")
 
         # ---- filename ----
-        fn_parts: list[str] = [f"{title} ({year})"]
+        fn_parts = [f"{title} ({year})"]
 
         # Optional – order is important for Plex:
         #  Title (Year) - 4K {edition-Director's Cut}.mkv
@@ -87,40 +71,27 @@ def build_media_path(
     # ------------------------------------------------------------------ #
     # Series (show record)
     # ------------------------------------------------------------------ #
-    if media_type == "series":
-        series_title = _clean(omdb["Title"])
-        first_year = _first_year(omdb["Year"])
+    if isinstance(media, SeriesInfo):
+        series_title = clean(media.title)
+        first_year = _first_year(media.year)
         return Path(f"{series_title} ({first_year})")
 
     # ------------------------------------------------------------------ #
     # Episode
     # ------------------------------------------------------------------ #
-    if media_type == "episode":
-        # 1)  Retrieve the parent-series info, favouring a live lookup.
-        series_id = omdb.get("seriesID")  # OMDb uses lowercase 'seriesID'
-        series_meta: OMDbItem | None = None
-        if not series_id:
-            raise ValueError("Episode record must contain 'seriesID' field.")
-        series_meta = query(imdb_id=series_id)
-        if not series_meta:
-            raise ValueError("Cannot find series metadata for episode.")
+    if isinstance(media, EpisodeInfo):
+        series_title = clean(media.series.title)
+        first_year = _first_year(media.series.year)
 
-        series_title = _clean(series_meta["Title"])
-        first_year = _first_year(series_meta["Year"])
-
-        # 2)  Validate required fields
-        if "Season" not in omdb or "Episode" not in omdb:
-            raise ValueError("Episode record must contain 'Season' and 'Episode' fields.")
-
-        season_num = int(omdb["Season"])
-        episode_num = int(omdb["Episode"])
-        ep_title = _clean(omdb["Title"])
+        season_num = int(media.season)
+        episode_num = int(media.episode)
+        ep_title = clean(media.title)
 
         show_name = Path(f"{series_title} ({first_year})")
         season_dir = show_name / f"Season {season_num:02d}"
 
         # ---- filename ----
-        fn_parts: list[str] = [ str(show_name) , f"s{season_num:02d}e{episode_num:02d}", ep_title ]
+        fn_parts = [ str(show_name) , f"s{season_num:02d}e{episode_num:02d}", ep_title ]
 
         # Optional – order is important for Plex:
         #  Title (Year) - 4K {edition-Director's Cut}.mkv
@@ -137,7 +108,7 @@ def build_media_path(
     # ------------------------------------------------------------------ #
     # Unsupported / unknown
     # ------------------------------------------------------------------ #
-    raise ValueError(f"Unsupported OMDb type: {media_type!r}")
+    raise ValueError(f"Unsupported type: {media!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -147,187 +118,271 @@ IMDB_RE      = re.compile(r"tt\d{7,8}")
 SEAS_EP_RE   = re.compile(r"[Ss](\d{1,2})[Ee](\d{1,2})")       # s03e12 / S3E2 / s03e02 etc.
 YEAR_RE      = re.compile(r"(19|20)\d{2}")
 YEAR_TOKEN   = re.compile(r"\(((19|20)\d{2})\)")
-NOISE_TOKENS = {
-    "720p","1080p","2160p","4k","hdr","dv","hevc","x264","x265","10bit","bluray",
-    "brrip","webrip","web","yify","yts","dd","dts","aac","hmax",
-    "extended","uncut"
-}
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _tokenize(path: Path) -> list[str]:
-    """Split dirname + basename on space, dot, underscore and dash."""
-    stem = path.stem
-    parts = re.split(r"[.\s_\-]+", stem)
-    return [p for p in parts if p]
+#def _best_match(
+#    wanted: str,  # cleaned title we expect
+#    candidates: Sequence[BaseInfo],
+#    cutoff: float = 0.6,
+#) -> BaseInfo | None:
+#    """Pick the candidate whose Title is closest to 'wanted' (difflib ratio)."""
+#    def score(item: BaseInfo) -> float:
+#        return difflib.SequenceMatcher(None, wanted.lower(), item.title).ratio()
+#    scored = sorted(((score(c), c) for c in candidates), reverse=True, key=lambda t: t[0])
+#    return scored[0][1] if scored and scored[0][0] >= cutoff else None
 
-def _clean_tokens(tokens: Sequence[str]) -> list[str]:
-    return [t for t in tokens if t.lower() not in NOISE_TOKENS]
 
-def _best_match(
-    wanted: str,  # cleaned title we expect
-    candidates: Sequence[OMDbItem],
-    cutoff: float = 0.6,
-) -> OMDbItem | None:
-    """Pick the candidate whose Title is closest to 'wanted' (difflib ratio)."""
-    def score(item: OMDbItem) -> float:
-        return difflib.SequenceMatcher(None, wanted.lower(), item["Title"].lower()).ratio()
-    scored = sorted(((score(c), c) for c in candidates), reverse=True, key=lambda t: t[0])
-    return scored[0][1] if scored and scored[0][0] >= cutoff else None
-
-# ---------------------------------------------------------------------------
-# The public helper
-# ---------------------------------------------------------------------------
-def guess_omdb_from_path(
+def guess_series(
     path_str: str,
     *,
-    api_key: str | None = None,
+    uid: str | None = None,
+    title: str | None = None,
     year: str | None = None,
-    series_id: str | None = None,
-    session=None,
-    max_pages: int = 3,
-) -> OMDbItem | None:
+    provider: ProviderSpec = "omdb",
+) -> SeriesInfo | None:
     """
-    Try to resolve `path_str` to exactly one OMDb entry.
-    Returns None on total failure.
-    """
-    path      = Path(path_str)
-    tokens    = _tokenize(path)
-    imdb_id_m = IMDB_RE.search(path_str)
-    imdb_id   = imdb_id_m.group(0) if imdb_id_m else None
+    Try to resolve `path_str` to exactly one series.
+    Returns None on failure.
 
-    # -----------------------------------------------------------
-    # 1. Direct IMDb-ID lookup – the shortest path to success
-    # -----------------------------------------------------------
-    if imdb_id:
-        if item := query(imdb_id=imdb_id, api_key=api_key, session=session):
-            return item
+    path_str: str - The filepath to use
+    year: str - Override the year
+    id: str - Override the id
+    provider: ProviderSpec - The metadata provider to use
+    -- The following options aren't required, but override certain options
+    """
+    provider = get_provider(provider)
+
+    if uid:
+        series_search = provider.search_series(
+            uid=uid)
+
+        if series_search:
+            if len(series_search) == 1:
+                return series_search[0]
+
+        # If a uid is passed, we should return a value.
+        # If it can't be found, we should return nothing.
+        return None
+
+    if not title or not year:
+        path      = Path(path_str)
+        tokens    = tokenize(path)
+
+        s_e_m = SEAS_EP_RE.search(path_str)
+        if not s_e_m:
+            # No SxxEyy marker found, so we can't guess a series
+            return None
+
+        series_search: list[SeriesInfo] | None = None
+
+        # Heuristic: all tokens *before* the SxxEyy chunk form the series title
+        idx = tokens.index(s_e_m.group(0))
+        series_title_tokens = clean_tokens(tokens[:idx])
+        series_year_token = None
+        series_year = None
+        for i, token in enumerate(series_title_tokens):
+            # Remove any year token which may be present
+            if year_m := YEAR_TOKEN.fullmatch(token):
+                series_year_token = series_title_tokens.pop(i)
+                series_year = year_m.group(1)
+                break
+
+        title = " ".join(series_title_tokens).strip()
+        year = series_year or year
+
+    # First, see if the title is enough for an exact match
+    series_results = provider.search_series(
+        title=title,
+    )
+
+    title_matches = [s for s in series_results if titles_equal(s.title, title)]
+    if len(title_matches) == 1:
+        return title_matches[0]
+
+    if year:
+        title_year_matches = [
+            s for s in series_results if titles_equal(s.title, title) and s.year == year ]
+        if len(title_year_matches) == 1:
+            return title_year_matches[0]
+
+
+    # Not able to find it with title and year..
+    return None
+
+
+def guess_episode(
+    path_str: str,
+    *,
+    uid: str | None = None,
+    title: str | None = None,
+    year: str | None = None,
+    series_title: str | None = None,
+    series_uid: str | None = None,
+    series_year: str | None = None,
+    provider: ProviderSpec = "omdb",
+) -> EpisodeInfo | None:
+    """
+    Try to resolve `path_str` to exactly one episode.
+    Returns None on failure.
+
+    path_str: str - The filepath to use
+    provider: ProviderSpec - The metadata provider to use
+    -- The following options aren't required, but override certain options
+    """
+    provider = get_provider(provider)
+
+    # guess series
+    series = guess_series(
+        path_str,
+        uid=series_uid,
+        title=series_title,
+        year=series_year,
+        provider=provider,
+    )
+
+    if series is None:
+        return None
+
+    imdb_id_m = None
+    if uid or (imdb_id_m := IMDB_RE.search(path_str)):
+        if not uid:
+            if imdb_id_m is None:
+                raise ValueError("Either 'uid' or an imdbid must be present.")
+            uid = imdb_id_m.group(0)
+        return provider.get_episode(
+            uid=uid,
+            series=series,)
 
     # -----------------------------------------------------------
     # 2. Detect episode markers (SxxEyy)
     # -----------------------------------------------------------
     s_e_m = SEAS_EP_RE.search(path_str)
-    if s_e_m:
-        season, episode = map(int, s_e_m.groups())
-        series_search: list[OMDbItem] | None = None
-        if not series_id:
-            # Heuristic: all tokens *before* the SxxEyy chunk form the series title
-            idx = tokens.index(s_e_m.group(0))
-            series_title_tokens = _clean_tokens(tokens[:idx])
-            series_year_token = None
-            series_year = None
-            for i, token in enumerate(series_title_tokens):
-                # Remove any year token which may be present
-                if year_m := YEAR_TOKEN.fullmatch(token):
-                    series_year_token = series_title_tokens.pop(i)
-                    series_year = int(year_m.group(1))
-                    break
-            # find and strip year token which may be present.
-            series_title = " ".join(series_title_tokens).strip()
-            if not series_title:
-                # Fallback: parent directory often carries the series name
-                series_title = path.parent.stem.replace(".", " ").replace("_", " ")
+    if not s_e_m:
+        # No SxxEyy marker found, so we can't guess an episode
+        return None
 
-            if year is not None:
-                series_year = year
-            # 2a. Find the series
-            series_search = search(
-                title=series_title,
-                media_type="series",
-                year=series_year,
-                api_key=api_key,
-                session=session,
-                max_pages=max_pages,
-            )
-
-        if series_search or series_id:
-            if not series_id:
-                series = _best_match(series_title, series_search) or series_search[0]
-                series_id = series["imdbID"]
-
-            # 2b. Query for the episode
-            ep = query(
-                imdb_id=series_id,
-                season=season,
-                episode=episode,
-                api_key=api_key,
-                session=session,
-            )
-            if ep and ep.get("Response") == "True":
-                return ep
-
-        # If we got here, treat it as an *entire season* or miniseries
-        #       (rare edge-case) and fall through to the "series" flow below.
-        media_hint: MediaType | None = "series"
-    else:
-        media_hint = None  # we’ll decide next
-
-    # -----------------------------------------------------------
-    # 3. Movie / Series heuristics
-    # -----------------------------------------------------------
-    year_m   = YEAR_RE.search(path_str)
-    year     = int(year_m.group(0)) if year_m else None
-
-    if not media_hint:
-        # If pathname contains "Season", "Sxx", or lives under "TV Shows" dir
-        lowered = path_str.lower()
-        if any(k in lowered for k in ["season ", "/season", "s0", "tv shows"]):
-            media_hint = "series"
-        else:
-            media_hint = "movie"
-
-    # Build a candidate title: tokens up to the year (if any) or all tokens until first NOISE token
-    if year and str(year) in tokens:
-        idx = tokens.index(str(year))
-        title_tokens = _clean_tokens(tokens[:idx])
-    else:
-        title_tokens = _clean_tokens(tokens)
-    title = " ".join(title_tokens).strip()
-
-    if not title:
-        # Final fallback – use parent dir
-        title = path.parent.stem.replace(".", " ").replace("_", " ")
-
-    # -----------------------------------------------------------
-    # 3a. Try an exact query() first for movies
-    # -----------------------------------------------------------
-    if media_hint == "movie":
-        item = query(
-            title=title,
-            year=year,
-            media_type="movie",
-            api_key=api_key,
-            session=session,
-        )
-        if item:
-            return item
-
-    # -----------------------------------------------------------
-    # 3b. Broader search() + fuzzy choose
-    # -----------------------------------------------------------
-    results = search(
+    season, episode = s_e_m.groups()
+    if not year:
+        year = _first_year(series.year)
+    # 2b. Query for the episode
+    return provider.get_episode(
+        series=series,
         title=title,
         year=year,
-        media_type=media_hint,
-        api_key=api_key,
-        session=session,
-        max_pages=max_pages,
+        season=season,
+        episode=episode,
     )
+
+
+def guess_movie(
+    path_str: str,
+    *,
+    uid: str | None = None,
+    title: str | None = None,
+    year: str | None = None,
+    provider: ProviderSpec = "omdb",
+) -> MovieInfo | None:
+    """
+    Try to resolve `path_str` to exactly one OMDb entry.
+    Returns None on total failure.
+    """
+    provider = get_provider(provider)
+
+    path      = Path(path_str)
+    tokens    = tokenize(path)
+
+    if uid is None:
+        imdb_id_m = IMDB_RE.search(path_str)
+        uid = imdb_id_m.group(0) if imdb_id_m else None
+
+    # Build a candidate title: tokens up to the year (if any) or all tokens until first NOISE token
+    if year in tokens:
+        idx = tokens.index(str(year))
+        title_tokens = clean_tokens(tokens[:idx])
+    else:
+        title_tokens = clean_tokens(tokens)
+    title = " ".join(title_tokens).strip()
+
+    results = provider.search_movie(
+        uid=uid,
+        title=title,
+        year=year)
+
     if results:
-        # First, prefer exact year match (when we have a year)
-        if year:
-            exact_year = [r for r in results if r.get("Year", "").startswith(str(year))]
-        else:
-            exact_year = []
+        if len(results) == 1:
+            return results[0]
+        elif len(results) > 1:
+            exact_matches: list[MovieInfo]
+            if not year:
+                exact_matches = [r for r in results if titles_equal(r.title, title)]
+            else:
+                exact_matches = [r for r in results if titles_equal(r.title, title) and r.year == str(year)]
+            if len(exact_matches) == 1:
+                return exact_matches[0]
 
-        pick_from = exact_year or results
-        best      = _best_match(title, pick_from) or pick_from[0]
+        # -----------------------------------------------------------
+        # 3b. Broader search() + fuzzy choose
+        # -----------------------------------------------------------
 
-        # If it’s a series and we *really* wanted a whole-series match, we’re done.
-        return best
+        #elif len(exact_matches) > 1:
+        #    # Too many close matches.
+        #    return None
+
+        #best = _best_match(title, results)
+
+        #if not best:
+        #    return None
+
+        #return MovieInfo(
+        #    uid=best["imdbID"],
+        #    title=best["Title"],
+        #    year=best["Year"],
+        #)
 
     # -----------------------------------------------------------
     # Total failure – give up
     # -----------------------------------------------------------
     return None
+
+
+def guess(
+    path_str: str,
+    *,
+    uid: str | None = None,
+    title: str | None = None,
+    year: str | None = None,
+    series_title: str | None = None,
+    series_uid: str | None = None,
+    series_year: str | None = None,
+    provider: ProviderSpec = "omdb",
+) -> BaseInfo | None:
+    episode_only = False
+    if series_title or series_uid or series_year:
+        episode_only = True
+
+    ep = guess_episode(
+        path_str,
+        uid=uid,
+        title=title,
+        year=year,
+        series_title=series_title,
+        series_uid=series_uid,
+        series_year=series_year,
+        provider=provider,
+    )
+
+    if ep:
+        return ep
+
+    if episode_only:
+        # If we got here, we didn't find an episode but we were asked to guess one.
+        return None
+
+    # If we got here, we didn't find an episode.
+    return guess_movie(
+        path_str,
+        uid=uid,
+        title=title,
+        year=year)

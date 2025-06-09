@@ -1,9 +1,13 @@
-from typing import TypedDict, Literal, NotRequired, Required, cast
+from typing import TypedDict, Literal, NotRequired, Required
 import sys
 import os
 import requests
 import itertools
-from typing import Iterable
+from typing import override
+from types import ModuleType
+from collections.abc import Iterable
+from av_info.db.core import MetadataProvider, MovieInfo, SeriesInfo, EpisodeInfo
+from av_info.utils import first_year
 
 
 OMDB_API_URL = "https://www.omdbapi.com/"
@@ -17,6 +21,9 @@ def get_api_key() -> str:
 
 
 MediaType = Literal["movie", "series", "episode"]
+
+
+SessionType = requests.Session | ModuleType | None
 
 
 class OMDbItem(TypedDict, total=False):
@@ -58,7 +65,7 @@ def query(
     episode: int | None = None,
     media_type: MediaType | None = None,
     api_key: str | None = None,
-    session: requests.Session | None = None) -> OMDbItem | None:
+    session: SessionType = None) -> OMDbItem | None:
     """
     Query OMDb for a movie, series, season, or episode.
 
@@ -116,7 +123,9 @@ def query(
     if imdb_id:
         params["i"] = imdb_id
     else:  # title search
-        params["t"] = title  # type: ignore[arg-type]
+        if not title:
+            raise ValueError("A title is required for a search")
+        params["t"] = title
         if year:
             params["y"] = str(year)
 
@@ -131,14 +140,14 @@ def query(
 
     sess = session or requests
     resp = sess.get(OMDB_API_URL, params=params, timeout=10)
-    resp.raise_for_status()
+    _ = resp.raise_for_status()
 
-    data: dict = resp.json()      # pyright: ignore[reportAny]
-    return data if data.get("Response") == "True" else None
+    data = resp.json() # pyright: ignore[reportAny]
+    return data if data.get("Response") == "True" else None # pyright: ignore[reportAny]
 
 
 def _search_pages(
-    sess: requests.Session,
+    sess: requests.Session | ModuleType,
     params: dict[str, str],
     max_pages: int,
 ) -> Iterable[OMDbItem]:
@@ -146,13 +155,13 @@ def _search_pages(
     for page in range(1, max_pages + 1):
         params["page"] = str(page)
         resp = sess.get(OMDB_API_URL, params=params, timeout=10)
-        resp.raise_for_status()
-        data: dict = resp.json()                                       # pyright: ignore[reportAny]
-        if data.get("Response") != "True":
+        _ = resp.raise_for_status()
+        data = resp.json() # pyright: ignore[reportAny]
+        if data.get("Response") != "True": # pyright: ignore[reportAny]
             break
         yield data
         # Stop early once we’ve collected everything OMDb says exists
-        if (page * 10) >= int(data.get("totalResults", page * 10)):
+        if (page * 10) >= int(data.get("totalResults", page * 10)): # pyright: ignore[reportAny]
             break
 
 
@@ -166,7 +175,7 @@ def search(
     seriesID: str | None = None,
     media_type: MediaType | None = None,
     api_key: str | None = None,
-    session: requests.Session | None = None,
+    session: SessionType = None,
     max_pages: int = 3,
 ) -> list[OMDbItem]:
     """
@@ -195,10 +204,7 @@ def search(
     list[dict]
         Zero or more raw-JSON items from OMDb.
     """
-    # ------------ validation -------------------------------------------------
-    if imdb_id and (year or media_type):
-        raise ValueError("'year' and 'media_type' are ignored when 'imdb_id' is used")
-
+    ic(title, imdb_id, year, season, episode, media_type, api_key, session, max_pages)
     api_key = api_key or get_api_key()
     sess = session or requests
 
@@ -220,11 +226,109 @@ def search(
         params["Season"] = str(season)
     if episode is not None:
         params["Episode"] = str(episode)
-    if seriesID is not None:
-        params["seriesID"] = seriesID
+    #if seriesID is not None:
+    #    params["seriesID"] = seriesID
+
+    ic(params)
 
     # Flatten the generator of page dicts into one list of result items
     pages = _search_pages(sess, params, max_pages)
     results_iter = (page["Search"] for page in pages)                 # pyright: ignore[reportAny]
     results: list[dict] = list(itertools.chain.from_iterable(results_iter))
+    ic(results)
     return results
+
+
+def build_series(item: OMDbItem) -> SeriesInfo:
+    return SeriesInfo(
+        uid=item["imdbID"],
+        title=item["Title"],
+        year=first_year(item["Year"]),
+    )
+
+
+def build_episode(item: OMDbItem, series: SeriesInfo) -> EpisodeInfo:
+    if "Season" not in item or "Episode" not in item:
+        raise ValueError("Episode data must contain 'Season' and 'Episode' keys")
+    if "seriesID" not in item:
+        raise ValueError("Episode data must contain 'seriesID' key")
+    if item["seriesID"] != series.uid:
+        raise ValueError("Episode data 'seriesID' must match the provided series UID")
+    # Validate that season, year, and episode all are integers
+    if not item["Season"].isdigit():
+        raise ValueError(f"Invalid season number: {item['Season']}")
+    if not item["Episode"].isdigit():
+        raise ValueError(f"Invalid episode number: {item['Episode']}")
+    if not item["Year"].isdigit():
+        raise ValueError(f"Invalid year: {item['Year']}")
+    return EpisodeInfo(
+        uid=item["imdbID"],
+        title=item["Title"],
+        year=item["Year"],
+        season=item["Season"],
+        episode=item["Episode"],
+        series=series
+    )
+
+
+def build_movie(item: OMDbItem):
+    if "seriesID" in item:
+        raise ValueError("Movie data must not contain 'seriesID' key")
+    if not item["Year"].isdigit():
+        raise ValueError(f"Invalid year: {item['Year']}")
+    return MovieInfo(
+        uid=item["imdbID"],
+        title=item["Title"],
+        year=item["Year"],
+    )
+
+
+class OMDBProvider(MetadataProvider):
+    @override
+    def search_movie(self, uid: str|None, title: str|None=None, year: str|None = None) -> list[MovieInfo]:
+        _year = int(year) if year else None
+        res = search(imdb_id=uid, title=title, year=_year, media_type='movie')
+        results: list[MovieInfo] = []
+        for item in res:
+            results.append(build_movie(item))
+        return results
+
+    @override
+    def search_series(
+            self,
+            uid: str|None = None,
+            title: str|None = None,
+            year: str|None = None) -> list[SeriesInfo]:
+        _year = int(year) if year else None
+
+        res = search(imdb_id=uid, title=title, year=_year, media_type='series')
+        results: list[SeriesInfo] = []
+        for item in res:
+            results.append(build_series(item))
+
+        return results
+
+    @override
+    def get_episode(
+            self,
+            series: SeriesInfo,
+            uid: str|None = None,
+            title: str|None = None,
+            year: str|None = None,
+            season: str|None = None,
+            episode: str|None = None) -> EpisodeInfo | None:
+        ic(series, uid, title, year, season, episode)
+        if title is None:
+            title = series.title
+        if uid is None:
+            uid = series.uid
+        res = query(
+            title=title,
+            year=int(year) if year else None,
+            season=int(season) if season else None,
+            episode=int(episode) if episode else None,
+            media_type='episode',
+        )
+        if res is None:
+            return None
+        return build_episode(res, series)
