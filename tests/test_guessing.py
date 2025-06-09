@@ -79,12 +79,53 @@ tmdb_answer_dict = {
         MovieInfo(
             uid="",
             title="Splice",
+            year="2010"),
+    # add more edge-cases here …
+}
+
+tvdb_answer_dict = {
+    "../temp/Adventure Time (2010) Season 1-10 S01-S10 + Extras (1080p BluRay x265 HEVC 10bit AAC 2.0 ImE)/Season 03/Adventure Time (2008) - S03E19 - Holly Jolly Secrets (1080p BluRay x265 ImE).mkv":
+        EpisodeInfo(
+            uid="tt2119588",
+            series=SeriesInfo(uid="tt1305826", title="Adventure Time", year="2010"),
+            title="Holly Jolly Secrets (1)",
+            year="2011",
+            season="3",
+            episode="19",
+        ),
+    "../temp/Adventure Time (2010) Season 1-10 S01-S10 + Extras (1080p BluRay x265 HEVC 10bit AAC 2.0 ImE)/Season 03/Adventure Time (2008) - S03E20 - Holly Jolly Secrets (2) (1080p BluRay x265 ImE).mkv":
+        EpisodeInfo(
+            uid="tt2119588",
+            series=SeriesInfo(uid="tt1305826", title="Adventure Time", year="2010"),
+            title="Holly Jolly Secrets (2)",
+            year="2011",
+            season="3",
+            episode="20",
+        ),
+    "/data1/media_server/TV Shows/Key.and.Peele.S01.1080p.BluRay.DDP.5.1.x265-EDGE2020/Key.&.Peele.S01E01.Series.Premiere.1080p.BluRay.DDP.5.1.H.265.-EDGE2020.mkv":
+        EpisodeInfo(
+            uid="",
+            series=SeriesInfo(uid="", title="Key & Peele", year="2012"),
+            title="Series Premiere",
+            year="2012",
+            season="1",
+            episode="1",
+        ),
+    "/data1/media_server/Movies/The.Nightmare.Before.Christmas.1993.1080p.BluRay.x264-FiDELiO/The.Nightmare.Before.Christmas.1993.1080p.BluRay.x264-FiDELiO.mkv":
+        MovieInfo(
+            uid="",
+            title="The Nightmare Before Christmas",
+            year="1993"),
+    "/data1/media_server/Movies/Splice (2009) [1080p]/Splice.2009.1080p.BrRip.x264.YIFY.mp4":
+        MovieInfo(
+            uid="",
+            title="Splice",
             year="2009"),
     # add more edge-cases here …
 }
 
 # Expand this list whenever you implement a new backend
-PROVIDERS: list[ProviderSpec] = ["omdb", "tmdb"]
+PROVIDERS: list[ProviderSpec] = ["omdb", "tmdb", "tvdb"]
 
 
 def movie_equality(
@@ -112,7 +153,7 @@ def episode_equality(
             lhs.episode == rhs.episode)
 
 
-def check_result(result: BaseInfo, expected: BaseInfo):
+def check_result(filepath: str, result: BaseInfo, expected: BaseInfo):
     if isinstance(result, EpisodeInfo):
         if not isinstance(expected, EpisodeInfo):
             raise TypeError(f"Expected EpisodeInfo for {filepath}, got {type(expected)}: {expected!r}")
@@ -144,7 +185,7 @@ def test_guess_omdb(filepath: str, expected: BaseInfo):
     if not result:
         raise ValueError(f"guess returned None for {filepath}")
     ic(result)
-    check_result(result, expected)
+    check_result(filepath, result, expected)
 
 
 @pytest.mark.parametrize(
@@ -162,4 +203,22 @@ def test_guess_tmdb(filepath: str, expected: BaseInfo):
     if not result:
         raise ValueError(f"guess returned None for {filepath}")
     ic(result)
-    check_result(result, expected)
+    check_result(filepath, result, expected)
+
+
+@pytest.mark.parametrize(
+    ("filepath", "expected"),
+    list(tvdb_answer_dict.items()),
+)
+def test_guess_tvdb(filepath: str, expected: BaseInfo):
+    """
+    Ensure guess() produces the expected EpisodeInfo/MovieInfo for every filepath
+    under every provider.
+    """
+    provider = get_provider("tvdb")
+
+    result = guess(filepath, provider=provider)
+    if not result:
+        raise ValueError(f"guess returned None for {filepath}")
+    ic(result)
+    check_result(filepath, result, expected)

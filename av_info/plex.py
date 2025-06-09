@@ -367,13 +367,48 @@ def guess_movie(
         if len(results) == 1:
             return results[0]
         elif len(results) > 1:
-            exact_matches: list[MovieInfo]
-            if not year:
-                exact_matches = [r for r in results if titles_equal(r.title, title)]
-            else:
-                exact_matches = [r for r in results if titles_equal(r.title, title) and r.year == str(year)]
-            if len(exact_matches) == 1:
-                return exact_matches[0]
+            matches: list[MovieInfo] = [
+                m for m in results
+                if titles_equal(m.title, title) ]
+
+            if len(matches) == 1:
+                return matches[0]
+
+            if year:
+                year_matches = [
+                    m for m in matches
+                    if m.year == year ]
+
+                if len(year_matches) == 1:
+                    return year_matches[0]
+
+            # Let's look for all year tokens in the full filepath, sometimes filepaths have mistakes.
+            all_tokens: list[str] = []
+            for token_list in tokens:
+                all_tokens.extend(token_list)
+            all_tokens = clean_tokens(all_tokens)
+
+            years = [ int(m.group(1)) for m in YEAR_TOKEN.finditer(" ".join(all_tokens)) ]
+
+            # For each candidate, measure the 'difference' between the years found
+            # and the year for that series.
+
+            closest_matches: list[MovieInfo] = []
+            closest_year_diff = 8000
+
+            for candidate in matches:
+                c_year = int(candidate.year)
+                diffs = [abs(c_year - y) for y in years]
+                min_diff = min(diffs)
+                if min_diff < closest_year_diff:
+                    closest_matches = [candidate]
+                    closest_year_diff = min_diff
+                elif min_diff == closest_year_diff:
+                    closest_matches.append(candidate)
+
+            if len(closest_matches) == 1:
+                # We found a series with the exact year match
+                return closest_matches[0]
 
         # -----------------------------------------------------------
         # 3b. Broader search() + fuzzy choose

@@ -156,7 +156,10 @@ def _paged(
 # --------------------------------------------------------------------------- #
 def _build_movie(item: _MovieResult) -> MovieInfo:
     uid = item.get("imdb_id") or str(item["id"])          # plain numeric for TMDB
-    return MovieInfo(uid=uid, title=item["title"], year=first_year(item.get("release_date", "0000")[:4]))
+    m_date = item.get("release_date", "0000")
+    if m_date == "":
+        m_date = "0000"
+    return MovieInfo(uid=uid, title=item["title"], year=first_year(m_date[:4]))
 
 
 def _build_series(item: _TVResult) -> SeriesInfo:
