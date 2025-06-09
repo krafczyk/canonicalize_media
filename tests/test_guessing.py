@@ -52,6 +52,15 @@ tmdb_answer_dict = {
             season="3",
             episode="19",
         ),
+    "../temp/Adventure Time (2010) Season 1-10 S01-S10 + Extras (1080p BluRay x265 HEVC 10bit AAC 2.0 ImE)/Season 03/Adventure Time (2008) - S03E20 - Holly Jolly Secrets (2) (1080p BluRay x265 ImE).mkv":
+        EpisodeInfo(
+            uid="tt2119588",
+            series=SeriesInfo(uid="tt1305826", title="Adventure Time", year="2010"),
+            title="Holly Jolly Secrets (2)",
+            year="2011",
+            season="3",
+            episode="20",
+        ),
     "/data1/media_server/TV Shows/Key.and.Peele.S01.1080p.BluRay.DDP.5.1.x265-EDGE2020/Key.&.Peele.S01E01.Series.Premiere.1080p.BluRay.DDP.5.1.H.265.-EDGE2020.mkv":
         EpisodeInfo(
             uid="",
