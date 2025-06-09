@@ -140,6 +140,7 @@ def guess_series(
     uid: str | None = None,
     title: str | None = None,
     year: str | None = None,
+    verbose: bool = False,
     provider: ProviderSpec = "omdb",
 ) -> SeriesInfo | None:
     """
@@ -156,7 +157,8 @@ def guess_series(
 
     if uid:
         series_search = provider.search_series(
-            uid=uid)
+            uid=uid,
+            verbose=verbose)
 
         if series_search:
             if len(series_search) == 1:
@@ -166,9 +168,10 @@ def guess_series(
         # If it can't be found, we should return nothing.
         return None
 
+    path      = Path(path_str)
+    tokens = tokenize(path)
     if not title or not year:
-        path      = Path(path_str)
-        tokens    = tokenize(path)
+        ic(path_str, tokens)
 
         s_e_m = SEAS_EP_RE.search(path_str)
         if not s_e_m:
@@ -195,6 +198,7 @@ def guess_series(
     # First, see if the title is enough for an exact match
     series_results = provider.search_series(
         title=title,
+        verbose=verbose
     )
 
     title_matches = [s for s in series_results if titles_equal(s.title, title)]
@@ -249,6 +253,9 @@ def guess_episode(
     series_title: str | None = None,
     series_uid: str | None = None,
     series_year: str | None = None,
+    season: str | None = None,
+    episode: str | None = None,
+    verbose: bool = False,
     provider: ProviderSpec = "omdb",
 ) -> EpisodeInfo | None:
     """
@@ -268,6 +275,7 @@ def guess_episode(
         title=series_title,
         year=series_year,
         provider=provider,
+        verbose=verbose,
     )
 
     if series is None:
@@ -286,12 +294,14 @@ def guess_episode(
     # -----------------------------------------------------------
     # 2. Detect episode markers (SxxEyy)
     # -----------------------------------------------------------
-    s_e_m = SEAS_EP_RE.search(path_str)
-    if not s_e_m:
-        # No SxxEyy marker found, so we can't guess an episode
-        return None
+    if not season or not episode:
+        s_e_m = SEAS_EP_RE.search(path_str)
+        if not s_e_m:
+            # No SxxEyy marker found, so we can't guess an episode
+            return None
 
-    season, episode = s_e_m.groups()
+        season, episode = s_e_m.groups()
+
     if not year:
         year = _first_year(series.year)
     # 2b. Query for the episode
@@ -301,6 +311,7 @@ def guess_episode(
         year=year,
         season=season,
         episode=episode,
+        verbose=verbose,
     )
 
 
@@ -310,6 +321,7 @@ def guess_movie(
     uid: str | None = None,
     title: str | None = None,
     year: str | None = None,
+    verbose: bool = False,
     provider: ProviderSpec = "omdb",
 ) -> MovieInfo | None:
     """
@@ -351,7 +363,8 @@ def guess_movie(
     results = provider.search_movie(
         uid=uid,
         title=title,
-        year=year)
+        year=year,
+        verbose=verbose)
 
     if results:
         if len(results) == 1:
@@ -399,6 +412,9 @@ def guess(
     series_title: str | None = None,
     series_uid: str | None = None,
     series_year: str | None = None,
+    season: str | None = None,
+    episode: str | None = None,
+    verbose: bool = False,
     provider: ProviderSpec = "omdb",
 ) -> BaseInfo | None:
     episode_only = False
@@ -413,6 +429,9 @@ def guess(
         series_title=series_title,
         series_uid=series_uid,
         series_year=series_year,
+        season = season,
+        episode = episode,
+        verbose=verbose,
         provider=provider,
     )
     if ep:
@@ -427,4 +446,5 @@ def guess(
         path_str,
         uid=uid,
         title=title,
+        verbose=verbose,
         year=year)

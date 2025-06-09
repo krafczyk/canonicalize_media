@@ -3,6 +3,7 @@ import sys
 import os
 import requests
 import itertools
+from pprint import pprint
 from typing import override
 from types import ModuleType
 from collections.abc import Iterable
@@ -281,9 +282,11 @@ def build_movie(item: OMDbItem):
 
 class OMDBProvider(MetadataProvider):
     @override
-    def search_movie(self, uid: str|None, title: str|None=None, year: str|None = None) -> list[MovieInfo]:
+    def search_movie(self, uid: str|None, title: str|None=None, year: str|None = None, verbose: bool=False) -> list[MovieInfo]:
         _year = int(year) if year else None
         res = search(imdb_id=uid, title=title, year=_year, media_type='movie')
+        if verbose:
+            pprint(res)
         results: list[MovieInfo] = []
         for item in res:
             results.append(build_movie(item))
@@ -294,10 +297,13 @@ class OMDBProvider(MetadataProvider):
             self,
             uid: str|None = None,
             title: str|None = None,
-            year: str|None = None) -> list[SeriesInfo]:
+            year: str|None = None,
+            verbose: bool = False) -> list[SeriesInfo]:
         _year = int(year) if year else None
 
         res = search(imdb_id=uid, title=title, year=_year, media_type='series')
+        if verbose:
+            pprint(res)
         results: list[SeriesInfo] = []
         for item in res:
             results.append(build_series(item))
@@ -312,7 +318,8 @@ class OMDBProvider(MetadataProvider):
             title: str|None = None,
             year: str|None = None,
             season: str|None = None,
-            episode: str|None = None) -> EpisodeInfo | None:
+            episode: str|None = None,
+            verbose: bool = False) -> EpisodeInfo | None:
         if title is None:
             title = series.title
         if uid is None:
@@ -324,6 +331,8 @@ class OMDBProvider(MetadataProvider):
             episode=int(episode) if episode else None,
             media_type='episode',
         )
+        if verbose:
+            pprint(res)
         if res is None:
             return None
         return build_episode(res, series)

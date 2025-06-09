@@ -193,7 +193,7 @@ class TMDBProvider(MetadataProvider):
 
     # ---------------  MOVIES  ------------------------------------------------
     @override
-    def search_movie(self, uid: str | None = None, title: str | None = None, year: str | None = None) -> list[MovieInfo]:
+    def search_movie(self, uid: str|None, title: str|None=None, year: str|None = None, verbose: bool=False) -> list[MovieInfo]:
         api_key, sess = get_api_key(), None
         if uid is None and title is None:
             raise ValueError("search_movie needs either 'uid' or 'title'")
@@ -224,7 +224,12 @@ class TMDBProvider(MetadataProvider):
 
     # ---------------  SERIES  ------------------------------------------------
     @override
-    def search_series(self, uid: str | None = None, title: str | None = None, year: str | None = None) -> list[SeriesInfo]:
+    def search_series(
+            self,
+            uid: str|None = None,
+            title: str|None = None,
+            year: str|None = None,
+            verbose: bool = False) -> list[SeriesInfo]:
         api_key, sess = get_api_key(), None
         if uid is None and title is None:
             raise ValueError("search_series needs either 'uid' or 'title'")
@@ -255,14 +260,14 @@ class TMDBProvider(MetadataProvider):
     # ---------------  EPISODES  ---------------------------------------------
     @override
     def get_episode(
-        self,
-        series: SeriesInfo,
-        uid: str | None = None,
-        title: str | None = None,           # not used by TMDB
-        year: str | None = None,            # not used
-        season: str | None = None,
-        episode: str | None = None,
-    ) -> EpisodeInfo | None:
+            self,
+            series: SeriesInfo,
+            uid: str|None = None,
+            title: str|None = None,
+            year: str|None = None,
+            season: str|None = None,
+            episode: str|None = None,
+            verbose: bool = False) -> EpisodeInfo | None:
         if season is None or episode is None:
             raise ValueError("TMDB requires *both* season and episode numbers")
 

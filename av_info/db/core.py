@@ -28,14 +28,15 @@ class EpisodeInfo(BaseInfo):
 
 class MetadataProvider(ABC):
     @abstractmethod
-    def search_movie(self, uid: str|None, title: str|None=None, year: str|None = None) -> list[MovieInfo]:        ...
+    def search_movie(self, uid: str|None, title: str|None=None, year: str|None = None, verbose: bool=False) -> list[MovieInfo]:        ...
 
     @abstractmethod
     def search_series(
             self,
             uid: str|None = None,
             title: str|None = None,
-            year: str|None = None) -> list[SeriesInfo]:
+            year: str|None = None,
+            verbose: bool = False) -> list[SeriesInfo]:
         ...
 
     @abstractmethod
@@ -46,5 +47,6 @@ class MetadataProvider(ABC):
             title: str|None = None,
             year: str|None = None,
             season: str|None = None,
-            episode: str|None = None) -> EpisodeInfo | None:
+            episode: str|None = None,
+            verbose: bool = False) -> EpisodeInfo | None:
         ...
