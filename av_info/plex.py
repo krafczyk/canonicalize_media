@@ -207,6 +207,34 @@ def guess_series(
         if len(title_year_matches) == 1:
             return title_year_matches[0]
 
+    # Let's look for all year tokens in the full filepath, sometimes filepaths have mistakes.
+    all_tokens: list[str] = []
+    for token_list in tokens:
+        all_tokens.extend(token_list)
+
+    years = [ int(m.group(1)) for m in YEAR_TOKEN.finditer(" ".join(all_tokens)) ]
+
+    ic(years)
+
+    # For each candidate, measure the 'difference' between the years found
+    # and the year for that series.
+
+    closest_matches: list[SeriesInfo] = []
+    closest_year_diff = 8000
+
+    for candidate in title_matches:
+        c_year = int(candidate.year)
+        diffs = [abs(c_year - y) for y in years]
+        min_diff = min(diffs)
+        if min_diff < closest_year_diff:
+            closest_matches = [candidate]
+            closest_year_diff = min_diff
+        elif min_diff == closest_year_diff:
+            closest_matches.append(candidate)
+
+    if closest_year_diff == 0 and len(closest_matches) == 1:
+        # We found a series with the exact year match
+        return closest_matches[0]
 
     # Not able to find it with title and year..
     return None
