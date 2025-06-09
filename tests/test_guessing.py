@@ -34,6 +34,11 @@ filepath_dict = {
             uid="",
             title="The Nightmare Before Christmas",
             year="1993"),
+    "/data1/media_server/Movies/Splice (2009) [1080p]/Splice.2009.1080p.BrRip.x264.YIFY.mp4":
+        MovieInfo(
+            uid="",
+            title="Splice",
+            year="2009"),
     # add more edge-cases here …
 }
 
