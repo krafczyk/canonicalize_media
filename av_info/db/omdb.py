@@ -286,6 +286,7 @@ class OMDBProvider(MetadataProvider):
         _year = int(year) if year else None
         res = search(imdb_id=uid, title=title, year=_year, media_type='movie')
         if verbose:
+            print(f"OMDB search_movie results:")
             pprint(res)
         results: list[MovieInfo] = []
         for item in res:
@@ -303,6 +304,7 @@ class OMDBProvider(MetadataProvider):
 
         res = search(imdb_id=uid, title=title, year=_year, media_type='series')
         if verbose:
+            print(f"OMDB search_series results:")
             pprint(res)
         results: list[SeriesInfo] = []
         for item in res:
@@ -332,6 +334,7 @@ class OMDBProvider(MetadataProvider):
             media_type='episode',
         )
         if verbose:
+            print(f"OMDB get_episode results:")
             pprint(res)
         if res is None:
             return None

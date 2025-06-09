@@ -17,6 +17,7 @@ import re
 from collections.abc import Iterable
 from types import ModuleType
 from typing import Literal, NotRequired, TypedDict, override
+from pprint import pprint
 
 import requests
 
@@ -199,7 +200,7 @@ class TMDBProvider(MetadataProvider):
             raise ValueError("search_movie needs either 'uid' or 'title'")
         kind = _uid_kind(uid) if uid else "other"
 
-        # --- ① UID supplied -----------------------------------------------------
+        # --- 1 UID supplied -----------------------------------------------------
         if kind == "imdb":
             hits = _find_by_imdb(uid, api_key=api_key, session=sess)
             movies = [h for h in hits if h["media_type"] == "movie"]          # type: ignore[index]
@@ -215,11 +216,15 @@ class TMDBProvider(MetadataProvider):
             raw["media_type"] = "movie"                                       # type: ignore[index]
             return [_build_movie(raw)]                                        # type: ignore[arg-type]
 
-        # --- ② Fallback title search -------------------------------------------
+        # --- 2 Fallback title search -------------------------------------------
         params = {"query": title} if title else {}
         if year:
             params["primary_release_year"] = year
         results = _paged("search/movie", api_key=api_key, session=sess, max_pages=3, **params)
+        results = [ m for m in results ]
+        if verbose:
+            print(f"TMDB search_movie result:")
+            pprint(results)
         return [_build_movie(m) for m in results]                              # type: ignore[arg-type]
 
     # ---------------  SERIES  ------------------------------------------------
@@ -255,6 +260,10 @@ class TMDBProvider(MetadataProvider):
         if year:
             params["first_air_date_year"] = year
         results = _paged("search/tv", api_key=api_key, session=sess, max_pages=3, **params)
+        results = [ s for s in results ]
+        if verbose:
+            print(f"TMDB search_series result:")
+            pprint(results)
         return [_build_series(s) for s in results]                            # type: ignore[arg-type]
 
     # ---------------  EPISODES  ---------------------------------------------
@@ -293,6 +302,9 @@ class TMDBProvider(MetadataProvider):
             session=sess,
             append_to_response="external_ids",
         )
+        if verbose:
+            print(f"TMDB get_episode result:")
+            pprint(ep_raw)
         ep_raw["show_id"] = sid                                               # type: ignore[index]
         ext = ep_raw.get("external_ids", {})
         if "imdb_id" in ext:

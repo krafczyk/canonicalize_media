@@ -171,8 +171,6 @@ def guess_series(
     path      = Path(path_str)
     tokens = tokenize(path)
     if not title or not year:
-        ic(path_str, tokens)
-
         s_e_m = SEAS_EP_RE.search(path_str)
         if not s_e_m:
             # No SxxEyy marker found, so we can't guess a series
@@ -202,6 +200,7 @@ def guess_series(
     )
 
     title_matches = [s for s in series_results if titles_equal(s.title, title)]
+
     if len(title_matches) == 1:
         return title_matches[0]
 
@@ -217,8 +216,6 @@ def guess_series(
         all_tokens.extend(token_list)
 
     years = [ int(m.group(1)) for m in YEAR_TOKEN.finditer(" ".join(all_tokens)) ]
-
-    ic(years)
 
     # For each candidate, measure the 'difference' between the years found
     # and the year for that series.

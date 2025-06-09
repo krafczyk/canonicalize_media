@@ -6,9 +6,6 @@ from pprint import pprint
 
 
 if __name__ == "__main__":
-    from mk_ic import install
-    install()
-
     parser = argparse.ArgumentParser()
     _ = parser.add_argument("input", type=str, help="The filepath to use for guessing")
     _ = parser.add_argument("--uid", type=str, help="unique id", required=False)
@@ -33,6 +30,7 @@ if __name__ == "__main__":
     )
 
     if res:
+        print(f"guess result:")
         pprint(res)
     else:
         print("No results found.")
