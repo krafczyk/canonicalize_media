@@ -1,19 +1,159 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ $# -ne 2 ]; then
-  echo "Usage: $0 <timecodes> <file.mkv>"
+
+to_timecode() {
+  local ts=$1        # e.g. 671.67
+  # integer‐divide by 60 to get whole minutes
+  local mins=$(echo "$ts/60" | bc )
+  # subtract (mins*60) to get the leftover seconds (float)
+  local secs=$(echo "$ts - ($mins * 60)" | bc -l)
+  # format as MM:SS.mmm
+  printf "%02d:%06.3f\n" "$mins" "$secs"
+}
+
+get_keyframes() {
+  local file="$1"
+  local -n keyfs="$2"
+  readarray -t keyfs < <(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time,flags -of csv=print_section=0 "$file" | grep K | awk -F, '{ print $1 }')
+}
+
+closest_keyframe_before() {
+  local target_time="$1"
+  local -n keyfs="$2"
+  
+  local closest_time=0
+  for kf in "${keyfs[@]}"; do
+    if (( $(echo "$kf <= $target_time" | bc -l) )); then
+      closest_time="$kf"
+    else
+      break
+    fi
+  done
+
+  echo "$closest_time"
+}
+
+closest_keyframe_after() {
+  local target_time="$1"
+  local -n keyfs="$2"
+  
+  local closest_time=0
+  for kf in "${keyfs[@]}"; do
+    if (( $(echo "$kf >= $target_time" | bc -l) )); then
+      closest_time="$kf"
+      break
+    fi
+  done
+
+  echo "$closest_time"
+}
+
+
+if [ $# -gt 2 -o $# -eq 0 ]; then
+  echo "Usage: $0 <file.mkv> [<cut_point>]"
   exit 1
 fi
 
-timecodes="$1"
-file="$2"
+file="$1"
 
-# 1) Split the file into two segments
+if [ ! -e "$file" ]; then
+  echo "File not found: $file"
+  exit 1
+fi
+
+if [ $# -eq 1 ]; then
+
+  start_min="8"
+  start_time=$(echo "$start_min * 60" | bc)
+
+  end_min="14"
+  end_time=$(echo "$end_min * 60" | bc)
+
+  get_keyframes "$file" keyframes
+
+  start_time=$(closest_keyframe_before "$start_time" keyframes)
+  end_time=$(closest_keyframe_after "$end_time" keyframes)
+
+  frame_step="5"
+
+  set -x
+  # Coarse title card search
+  ffmpeg -hide_banner -nostats -hwaccel cuda -c:v hevc_cuvid -ss $start_time -to $end_time -i "$file" -i title_card.png -filter_complex "[0:v]framestep=$frame_step[sampled];[sampled][1:v]ssim=stats_file=ssim_output.txt" -f null - >& /dev/null
+  set +x
+
+  mapfile -t frame_n < <(cat ssim_output.txt | awk '{ print $1 }' | cut -b 3-)
+  mapfile -t ssim < <(cat ssim_output.txt | awk '{ gsub(/[()]/, "", $6); print $6 }')
+
+  best_sim=0
+  best_frame=0
+  for i in "${!frame_n[@]}"; do
+    if (( $(echo "${ssim[i]} > $best_sim" | bc -l) )); then
+      best_sim="${ssim[i]}"
+      best_frame="${frame_n[i]}"
+    fi
+  done
+
+  echo "best_sim: $best_sim at frame: $best_frame"
+
+  likely_title_card_time=$(echo "$start_time + (($best_frame * $frame_step) / 24)" | bc -l)
+
+  echo "likely title card time: $(to_timecode $likely_title_card_time)"
+
+  # Find black frame before the title card
+
+  search_window="3"
+  min_width="0.01"
+  thresh="0.01"
+
+  start_time=$(echo "$likely_title_card_time - $search_window" | bc -l)
+  start_time=$(closest_keyframe_before "$start_time" keyframes)
+  start_timecode=$(to_timecode "$start_time")
+
+  end_time=$(closest_keyframe_after "$likely_title_card_time" keyframes)
+  end_timecode=$(to_timecode "$end_time")
+
+  echo "Searching for black frames in the range $start_time to $end_time"
+
+  ffmpeg -hide_banner -nostats -hwaccel cuda -c:v hevc_cuvid -ss "$start_timecode" -to $end_timecode -i "$file" -vf blackdetect=d=$min_width:pix_th=$thresh -an -f null - 2>&1 | awk '/black_start/' > blackdata.txt
+
+  mapfile -t endpoints < <(cat blackdata.txt | awk '{ print $5 }' | awk -F: '{ print $2 }')
+
+  # Find the closest endpoint to the likely title card time
+  closest_endpoint=9999
+  for el in "${endpoints[@]}"; do
+    endpoint_time=$(echo "$el + $start_time" | bc -l)
+    if (( $(echo "$endpoint_time < $likely_title_card_time" | bc -l) )); then
+      time_diff=$(echo "$likely_title_card_time - $endpoint_time" | bc -l)
+      if (( $(echo "$time_diff < $closest_endpoint" | bc -l) )); then
+        closest_endpoint="$endpoint_time"
+      fi
+    fi
+  done
+
+  echo "Closest black frame endpoint: $closest_endpoint -> $(to_timecode $closest_endpoint)"
+  cut_point=$( echo "$closest_endpoint - 0.1" | bc -l )
+
+else
+  cut_point="$2"
+fi;
+
+echo "Cut point: $cut_point"
+
+cut_timecode=$(to_timecode "$cut_point")
+
+echo "Cut timecode: $cut_timecode"
+
+# 1) Rough split into two segments. 
 mkvmerge \
   --output 'segment_%03d.mkv' \
-  --split timecodes:"$timecodes" \
+  --split timecodes:"$cut_timecode" \
   "$file"
+
+if [ $(ls segment_*.mkv | wc -l) -ne 2 ]; then
+  echo "Error: Expected exactly 2 segments, but found $(ls segment_*.mkv | wc -l)." >&2
+  exit 1
+fi
 
 # 2) Parse the original filename
 filename="$(basename "$file")"
