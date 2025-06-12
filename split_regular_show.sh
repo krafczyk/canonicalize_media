@@ -12,6 +12,15 @@ to_timecode() {
   printf "%02d:%06.3f\n" "$mins" "$secs"
 }
 
+fix_timecode() {
+  local time_diff="$1"
+  if [[ $time_diff == .* ]]; then
+    echo "0$time_diff"
+  else
+    echo "$time_diff"
+  fi
+}
+
 get_keyframes() {
   local file="$1"
   local -n keyfs="$2"
@@ -62,6 +71,9 @@ if [ ! -e "$file" ]; then
   exit 1
 fi
 
+# Needed for precise split
+get_keyframes "$file" keyframes
+
 if [ $# -eq 1 ]; then
 
   start_min="8"
@@ -69,8 +81,6 @@ if [ $# -eq 1 ]; then
 
   end_min="14"
   end_time=$(echo "$end_min * 60" | bc)
-
-  get_keyframes "$file" keyframes
 
   start_time=$(closest_keyframe_before "$start_time" keyframes)
   end_time=$(closest_keyframe_after "$end_time" keyframes)
@@ -140,15 +150,68 @@ fi;
 
 echo "Cut point: $cut_point"
 
-cut_timecode=$(to_timecode "$cut_point")
+keyframe_before=$(closest_keyframe_before "$cut_point" keyframes)
 
-echo "Cut timecode: $cut_timecode"
+keyframe_after=$(closest_keyframe_after "$cut_point" keyframes)
 
-# 1) Rough split into two segments. 
-mkvmerge \
-  --output 'segment_%03d.mkv' \
-  --split timecodes:"$cut_timecode" \
-  "$file"
+first_part_diff=$(echo "$cut_point - $keyframe_before" | bc -l)
+
+# If the first_part_diff is small enough, we can just use keyframe before as the cut point
+#if (( $(echo "$first_part_diff < 0.2" | bc -l) )); then
+if true; then
+
+  keyframe_before_timecode=$(to_timecode "$keyframe_before")
+  echo "Using keyframe before as cut point: $keyframe_before_timecode"
+  mkvmerge -o "segment_%03d.mkv" \
+    --split "timecodes:$keyframe_before_timecode" "$file"
+
+else
+  second_part_diff=$(echo "$keyframe_after - $cut_point" | bc -l)
+
+  echo "$first_part_diff"
+  echo "$second_part_diff"
+  # add a 0 in front of results < 1 second. They are reported like '.123'
+  first_part_diff=$(fix_timecode "$first_part_diff")
+  second_part_diff=$(fix_timecode "$second_part_diff")
+  echo "$first_part_diff"
+  echo "$second_part_diff"
+
+  # Choose encoder
+  codec=$(ffprobe -v error -select_streams v:0 \
+                  -show_entries stream=codec_name \
+                  -of csv=p=0 "$file")
+
+  case "$codec" in
+    h264) venc=(-c:v libx264 -crf 0 -preset veryfast) ;;
+    hevc) venc=(-c:v libx265 -x265-params lossless=1 -preset fast) ;;
+    vp9)  venc=(-c:v libvpx-vp9 -lossless 1) ;;
+    *)    echo "Unknown/unsupported codec: $codec" && exit 1 ;;
+  esac
+  # audio/subs always copied
+  acopy=(-c:a copy -c:s copy)
+
+  cut_timecode=$(to_timecode "$cut_point")
+  keyframe_before_timecode=$(to_timecode "$keyframe_before")
+  keyframe_after_timecode=$(to_timecode "$keyframe_after")
+
+  echo "▶ building first half …"
+
+  # Copy up to the key-frame that begins the boundary GOP
+  set -x
+  ffmpeg -y -v error -to "$keyframe_before_timecode" -i "$file" \
+         -map 0 -c copy -avoid_negative_ts make_zero \
+         part_1.mkv
+
+  # Loss-less re-encode keyframe_before - cut_point
+  ffmpeg -y -v error -ss "$keyframe_before_timecode" -i "$file" -t "$first_part_diff" -map 0 "${venc[@]}" "${acopy[@]}" -avoid_negative_ts make_zero part_2.mkv
+
+  # Merge the two parts
+  mkvmerge -o "segment_1.mkv" \
+           part_1.mkv + part_2.mkv
+
+  "Incomplete splitting section!!"
+  exit 1
+fi;
 
 if [ $(ls segment_*.mkv | wc -l) -ne 2 ]; then
   echo "Error: Expected exactly 2 segments, but found $(ls segment_*.mkv | wc -l)." >&2
