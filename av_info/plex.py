@@ -297,7 +297,11 @@ def guess_episode(
             # No SxxEyy marker found, so we can't guess an episode
             return None
 
-        season, episode = s_e_m.groups()
+        path_season, path_episode = s_e_m.groups()
+        if not season:
+            season=path_season
+        if not episode:
+            episode=path_episode
 
     if not year:
         year = _first_year(series.year)
