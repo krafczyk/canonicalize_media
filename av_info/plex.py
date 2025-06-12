@@ -2,7 +2,7 @@ import re
 #import difflib
 from pathlib import Path
 from av_info.db import ProviderSpec, BaseInfo, MovieInfo, SeriesInfo, EpisodeInfo, get_provider
-from av_info.utils import clean, clean_tokens, tokenize, titles_equal
+from av_info.utils import clean, clean_tokens, tokenize, titles_equal, sanitize_filename
 from av_info.utils import first_year as _first_year
 #from collections.abc import Sequence
 
@@ -66,6 +66,8 @@ def build_media_path(
             fn_parts.append(edition_part)
 
         filename = " - ".join(fn_parts) + f".{ext.lstrip('.')}"
+        # Sanitize '/'
+        filename = sanitize_filename(filename)
         return folder / filename
 
     # ------------------------------------------------------------------ #
@@ -74,7 +76,9 @@ def build_media_path(
     if isinstance(media, SeriesInfo):
         series_title = clean(media.title)
         first_year = _first_year(media.year)
-        return Path(f"{series_title} ({first_year})")
+        filename = f"{series_title} ({first_year})"
+        filename = sanitize_filename(filename)
+        return Path(filename)
 
     # ------------------------------------------------------------------ #
     # Episode
@@ -103,6 +107,7 @@ def build_media_path(
             fn_parts.append(edition_part)
 
         filename = " - ".join(fn_parts) + f".{ext.lstrip('.')}"
+        filename = sanitize_filename(filename)
         return season_dir / filename
 
     # ------------------------------------------------------------------ #

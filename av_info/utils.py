@@ -158,6 +158,9 @@ DEFAULT_SUBS: dict[str, str] = {
     # add more as you encounter them…
 }
 
+def sanitize_filename(filepath: str) -> str:
+    return filepath.replace('/', '_')
+
 # Pre-compile patterns once for speed.
 _SUB_PATTERNS = [(re.compile(pat, flags=re.IGNORECASE), repl)
                  for pat, repl in DEFAULT_SUBS.items()]
