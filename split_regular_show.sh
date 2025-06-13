@@ -59,12 +59,43 @@ closest_keyframe_after() {
 }
 
 
-if [ $# -gt 2 -o $# -eq 0 ]; then
-  echo "Usage: $0 <file.mkv> [<cut_point>]"
+if [ $# -lt 1 ] || [ $# -gt 5 ]; then
+  echo "Usage: $0 <file.mkv> [--cut-point <cut_point>] [--split-mode <mode>]"
   exit 1
 fi
 
+
 file="$1"
+shift
+
+mode="simple"
+
+known_modes=("simple" "precise")
+
+# simple option parser
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --cut-point)
+            [ $# -ge 2 ] || { echo "Error: --cut-point needs a value"; exit 1; }
+            cut_point=$2
+            shift 2
+            ;;
+        --split-mode)
+            [ $# -ge 2 ] || { echo "Error: --mode needs a value"; exit 1; }
+            mode=$2
+            if [[ ! " ${known_modes[@]} " =~ " ${mode} " ]]; then
+                echo "Error: Unknown split mode '$mode'. Known modes are: ${known_modes[*]}"
+                exit 1
+            fi
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
 
 if [ ! -e "$file" ]; then
   echo "File not found: $file"
@@ -74,7 +105,7 @@ fi
 # Needed for precise split
 get_keyframes "$file" keyframes
 
-if [ $# -eq 1 ]; then
+if [[ -z ${cut_point+x} ]]; then
 
   start_min="8"
   start_time=$(echo "$start_min * 60" | bc)
@@ -144,73 +175,112 @@ if [ $# -eq 1 ]; then
   echo "Closest black frame endpoint: $closest_endpoint -> $(to_timecode $closest_endpoint)"
   cut_point=$( echo "$closest_endpoint - 0.1" | bc -l )
 
-else
-  cut_point="$2"
 fi;
 
 echo "Cut point: $cut_point"
-
 keyframe_before=$(closest_keyframe_before "$cut_point" keyframes)
 
-keyframe_after=$(closest_keyframe_after "$cut_point" keyframes)
-
-first_part_diff=$(echo "$cut_point - $keyframe_before" | bc -l)
-
-# If the first_part_diff is small enough, we can just use keyframe before as the cut point
-#if (( $(echo "$first_part_diff < 0.2" | bc -l) )); then
-if true; then
-
+# Simple mkvmerge split
+if [ "$mode" == "simple" ]; then
+  echo "Using simple mode: Using keyframe before as cut point"
   keyframe_before_timecode=$(to_timecode "$keyframe_before")
   echo "Using keyframe before as cut point: $keyframe_before_timecode"
   mkvmerge -o "segment_%03d.mkv" \
     --split "timecodes:$keyframe_before_timecode" "$file"
+  exit 0
+fi
 
-else
-  second_part_diff=$(echo "$keyframe_after - $cut_point" | bc -l)
+if [ "$mode" == "precise" ]; then
+  # Get encoding information for the source
+  ######### 1. probe source ######################################################
+  readarray -t probe_data < <(
+    ffprobe -v error \
+            -select_streams v:0 \
+            -show_entries format=duration,size \
+            -show_entries stream=codec_name,pix_fmt \
+            -of default=noprint_wrappers=1:nokey=1 "$file"
+  )
 
-  echo "$first_part_diff"
-  echo "$second_part_diff"
-  # add a 0 in front of results < 1 second. They are reported like '.123'
-  first_part_diff=$(fix_timecode "$first_part_diff")
-  second_part_diff=$(fix_timecode "$second_part_diff")
-  echo "$first_part_diff"
-  echo "$second_part_diff"
+  codec="${probe_data[0]}"
+  pix_fmt="${probe_data[1]}"
+  duration="${probe_data[2]}"
+  size="${probe_data[3]}"
 
-  # Choose encoder
-  codec=$(ffprobe -v error -select_streams v:0 \
-                  -show_entries stream=codec_name \
-                  -of csv=p=0 "$file")
+  ######### 2. compute bitrate ###################################################
+  bits=$(( size * 8 ))
+  bps=$(awk "BEGIN {printf \"%d\", $bits / $duration}")   # bits / second
+  kbps=$(( bps / 1000 ))k                                 # for ffmpeg
+
+  echo "kbps: $kbps"
+
+  # optional convenience: gather the x265 knobs in shell vars
+  # These are SDR settings for this particular set of files
+  x265_p1="pass=1:profile=main10:level=4:no-slow-firstpass=1"
+  x265_p2="pass=2:profile=main10:level=4:colorprim=bt709:transfer=bt709:colormatrix=bt709"
+
+  cut_timepoint=$(to_timecode "$cut_point")
+
+  hwdec=()          # default: empty  → fall back to CPU decode
 
   case "$codec" in
-    h264) venc=(-c:v libx264 -crf 0 -preset veryfast) ;;
-    hevc) venc=(-c:v libx265 -x265-params lossless=1 -preset fast) ;;
-    vp9)  venc=(-c:v libvpx-vp9 -lossless 1) ;;
-    *)    echo "Unknown/unsupported codec: $codec" && exit 1 ;;
+    hevc*)  hwdec=( -hwaccel cuda -c:v hevc_cuvid ) ;;   # handles 8- & 10-bit
+    h264*)  hwdec=( -hwaccel cuda -c:v h264_cuvid ) ;;
   esac
-  # audio/subs always copied
-  acopy=(-c:a copy -c:s copy)
 
-  cut_timecode=$(to_timecode "$cut_point")
-  keyframe_before_timecode=$(to_timecode "$keyframe_before")
-  keyframe_after_timecode=$(to_timecode "$keyframe_after")
+  # include metadata about the source file
+  meta=( -map 0 -map_metadata 0 -map_chapters 0 )
 
-  echo "▶ building first half …"
+  copy=( -c:a copy -c:s copy -c:t copy )
 
-  # Copy up to the key-frame that begins the boundary GOP
+  first_pass_args=(
+    -map 0:v:0
+    -c:v libx265 -preset slow
+    -pix_fmt yuv420p10le
+    -b:v "$kbps"
+    -profile:v main10 -level:v 4.0
+    -x265-params "$x265_p1"
+    -an -f null
+  )
+
+  second_pass_args=(
+    "${meta[@]}"
+    -color_primaries bt709
+    -color_trc bt709
+    -colorspace bt709
+    -c:v libx265 -preset slow
+    -pix_fmt yuv420p10le
+    -b:v "$kbps"
+    -profile:v main10 -level:v 4.0
+    -x265-params "$x265_p2"
+    "${copy[@]}"
+  )
+
+
+  # First Half
+
+  CUDA_VISIBLE_DEVICES=1  # Use 2nd GPU for ffmpeg
+
   set -x
-  ffmpeg -y -v error -to "$keyframe_before_timecode" -i "$file" \
-         -map 0 -c copy -avoid_negative_ts make_zero \
-         part_1.mkv
+  ############################################
+  # 1st pass  (analysis only – writes FFmpeg2pass-0.log)
+  ffmpeg -y "${hwdec[@]}" -i "$file" -to "$cut_timepoint" \
+         "${first_pass_args[@]}" /dev/null
 
-  # Loss-less re-encode keyframe_before - cut_point
-  ffmpeg -y -v error -ss "$keyframe_before_timecode" -i "$file" -t "$first_part_diff" -map 0 "${venc[@]}" "${acopy[@]}" -avoid_negative_ts make_zero part_2.mkv
+  ############################################
+  # 2nd pass  (actual encode)
+  ffmpeg -y "${hwdec[@]}" -i "$file" -to "$cut_timepoint" \
+         "${second_pass_args[@]}" segment_1.mkv
 
-  # Merge the two parts
-  mkvmerge -o "segment_1.mkv" \
-           part_1.mkv + part_2.mkv
+  # Second Half
+  # 1st pass  (analysis only – writes FFmpeg2pass-0.log)
+  ffmpeg "${hwdec[@]}" -i "$file" -ss "$cut_timepoint"  \
+         "${first_pass_args[@]}" /dev/null
 
-  "Incomplete splitting section!!"
-  exit 1
+  ############################################
+  # 2nd pass  (actual encode)
+  ffmpeg "${hwdec[@]}" -i "$file" -ss "$cut_timepoint"   \
+         "${second_pass_args[@]}" segment_2.mkv
+  set +x
 fi;
 
 if [ $(ls segment_*.mkv | wc -l) -ne 2 ]; then
