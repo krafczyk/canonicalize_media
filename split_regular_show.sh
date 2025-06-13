@@ -105,6 +105,29 @@ fi
 # Needed for precise split
 get_keyframes "$file" keyframes
 
+# Get encoding information for the source
+######### 1. probe source ######################################################
+readarray -t probe_data < <(
+  ffprobe -v error \
+          -select_streams v:0 \
+          -show_entries format=duration,size \
+          -show_entries stream=codec_name,pix_fmt \
+          -of default=noprint_wrappers=1:nokey=1 "$file"
+)
+
+codec="${probe_data[0]}"
+pix_fmt="${probe_data[1]}"
+duration="${probe_data[2]}"
+size="${probe_data[3]}"
+
+hwdec=()          # default: empty  → fall back to CPU decode
+
+case "$codec" in
+  hevc*)  hwdec=( -hwaccel cuda -hwaccel_device 1 -c:v hevc_cuvid ) ;;   # handles 8- & 10-bit
+  h264*)  hwdec=( -hwaccel cuda -hwaccel_device 1 -c:v h264_cuvid ) ;;
+esac
+
+
 if [[ -z ${cut_point+x} ]]; then
 
   start_min="8"
@@ -120,7 +143,7 @@ if [[ -z ${cut_point+x} ]]; then
 
   set -x
   # Coarse title card search
-  ffmpeg -hide_banner -nostats -hwaccel cuda -c:v hevc_cuvid -ss $start_time -to $end_time -i "$file" -i title_card.png -filter_complex "[0:v]framestep=$frame_step[sampled];[sampled][1:v]ssim=stats_file=ssim_output.txt" -f null - >& /dev/null
+  ffmpeg -hide_banner -nostats "${hwdec[@]}" -ss $start_time -to $end_time -i "$file" -i title_card.png -filter_complex "[0:v]framestep=$frame_step[sampled];[sampled][1:v]ssim=stats_file=ssim_output.txt" -f null - >& /dev/null
   set +x
 
   mapfile -t frame_n < <(cat ssim_output.txt | awk '{ print $1 }' | cut -b 3-)
@@ -187,25 +210,9 @@ if [ "$mode" == "simple" ]; then
   echo "Using keyframe before as cut point: $keyframe_before_timecode"
   mkvmerge -o "segment_%03d.mkv" \
     --split "timecodes:$keyframe_before_timecode" "$file"
-  exit 0
 fi
 
 if [ "$mode" == "precise" ]; then
-  # Get encoding information for the source
-  ######### 1. probe source ######################################################
-  readarray -t probe_data < <(
-    ffprobe -v error \
-            -select_streams v:0 \
-            -show_entries format=duration,size \
-            -show_entries stream=codec_name,pix_fmt \
-            -of default=noprint_wrappers=1:nokey=1 "$file"
-  )
-
-  codec="${probe_data[0]}"
-  pix_fmt="${probe_data[1]}"
-  duration="${probe_data[2]}"
-  size="${probe_data[3]}"
-
   ######### 2. compute bitrate ###################################################
   bits=$(( size * 8 ))
   bps=$(awk "BEGIN {printf \"%d\", $bits / $duration}")   # bits / second
@@ -219,13 +226,6 @@ if [ "$mode" == "precise" ]; then
   x265_p2="pass=2:profile=main10:level=4:colorprim=bt709:transfer=bt709:colormatrix=bt709"
 
   cut_timepoint=$(to_timecode "$cut_point")
-
-  hwdec=()          # default: empty  → fall back to CPU decode
-
-  case "$codec" in
-    hevc*)  hwdec=( -hwaccel cuda -c:v hevc_cuvid ) ;;   # handles 8- & 10-bit
-    h264*)  hwdec=( -hwaccel cuda -c:v h264_cuvid ) ;;
-  esac
 
   # include metadata about the source file
   meta=( -map 0 -map_metadata 0 -map_chapters 0 )
@@ -257,8 +257,6 @@ if [ "$mode" == "precise" ]; then
 
 
   # First Half
-
-  CUDA_VISIBLE_DEVICES=1  # Use 2nd GPU for ffmpeg
 
   set -x
   ############################################
