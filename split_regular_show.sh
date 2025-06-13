@@ -267,17 +267,17 @@ if [ "$mode" == "precise" ]; then
   ############################################
   # 2nd pass  (actual encode)
   ffmpeg -y "${hwdec[@]}" -i "$file" -to "$cut_timepoint" \
-         "${second_pass_args[@]}" segment_1.mkv
+         "${second_pass_args[@]}" segment_001.mkv
 
   # Second Half
   # 1st pass  (analysis only – writes FFmpeg2pass-0.log)
-  ffmpeg "${hwdec[@]}" -i "$file" -ss "$cut_timepoint"  \
+  ffmpeg -y "${hwdec[@]}" -i "$file" -ss "$cut_timepoint"  \
          "${first_pass_args[@]}" /dev/null
 
   ############################################
   # 2nd pass  (actual encode)
-  ffmpeg "${hwdec[@]}" -i "$file" -ss "$cut_timepoint"   \
-         "${second_pass_args[@]}" segment_2.mkv
+  ffmpeg -y "${hwdec[@]}" -i "$file" -ss "$cut_timepoint"   \
+         "${second_pass_args[@]}" segment_002.mkv
   set +x
 fi;
 
