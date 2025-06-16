@@ -159,3 +159,67 @@ find_image() {
   likely_image_time=$(echo "$start_time + (($best_frame * $frame_step) / 24)" | bc -l)
   echo $(to_timecode "$likely_image_time")
 }
+
+
+find_prior_black() {
+  # Find black frame before the title card
+  # $1: initial guess
+  # $2: file
+  # [$3]: search_window
+
+  guess_time="$1"
+  file="$2"
+  if [[ -z "$3" ]]; then
+    search_window=""
+  else
+    search_window="$3"
+  fi
+
+  time_spec=()
+
+  if [[ -n "$search_window" ]]; then
+    start_time=$(echo "$guess_time - $search_window" | bc -l)
+    start_time=$(closest_keyframe_before "$start_time" keyframes)
+    start_timecode=$(to_timecode "$start_time")
+
+    end_time=$(closest_keyframe_after "$guess_time" keyframes)
+    if [ "$end_time" == "0" ]; then
+      end_time="$guess_time"
+    fi
+
+    if [ end_time < start_time ]; then
+      exit 1
+    fi
+    end_timecode=$(to_timecode "$end_time")
+
+    time_spec=(-ss "$start_timecode" -to "$end_timecode")
+  else
+    end_time="$guess_time"
+    end_timecode=$(to_timecode "$end_time")
+
+    time_spec=(-to "$end_timecode")
+  fi
+
+  min_width="0.01"
+  thresh="0.01"
+
+  set -x
+  ffmpeg -hide_banner -nostats -hwaccel cuda -c:v hevc_cuvid "${time_spec[@]}" -i "$file" -vf blackdetect=d=$min_width:pix_th=$thresh -an -f null - 2>&1 | awk '/black_start/' > blackdata.txt
+  set +x
+
+  mapfile -t endpoints < <(cat blackdata.txt | awk '{ print $5 }' | awk -F: '{ print $2 }')
+
+  # Find the closest endpoint to the likely title card time
+  closest_endpoint=9999
+  for el in "${endpoints[@]}"; do
+    endpoint_time=$(echo "$el + $start_time" | bc -l)
+    if (( $(echo "$endpoint_time < $guess_time" | bc -l) )); then
+      time_diff=$(echo "$guess_time - $endpoint_time" | bc -l)
+      if (( $(echo "$time_diff < $closest_endpoint" | bc -l) )); then
+        closest_endpoint="$endpoint_time"
+      fi
+    fi
+  done
+
+  echo "$closest_endpoint"
+}
