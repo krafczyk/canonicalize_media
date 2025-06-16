@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-source ffmpeg_ops.sh
+source $(realpath $(dirname "$0"))/ffmpeg_ops.sh
 
 
 if [ $# -lt 1 ] || [ $# -gt 5 ]; then
@@ -79,14 +79,12 @@ if [[ -z ${cut_point+x} ]]; then
 
   likely_title_card_time=$(find_image title_card.png -ss $start_time -to $end_time -i "$file")
 
-  echo "likely title card time: $(to_timecode $likely_title_card_time)"
+  >&2 echo "likely title card time: $likely_title_card_time -> $(to_timecode $likely_title_card_time)"
 
   cut_point=$(find_prior_black "$likely_title_card_time" "$file" 3)
-  cut_point=$( echo "$closest_endpoint - 0.1" | bc -l )
-
+  cut_point=$( echo "$cut_point - 0.1" | bc -l )
 fi;
 
-echo "Cut point: $cut_point"
 keyframe_before=$(closest_keyframe_before "$cut_point" keyframes)
 
 # Simple mkvmerge split

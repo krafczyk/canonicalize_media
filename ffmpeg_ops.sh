@@ -3,6 +3,11 @@ hwdec=()          # default: empty  → fall back to CPU decode
 
 to_timecode() {
   local ts=$1        # e.g. 671.67
+  # If the input has a ':', it's probably already a timecode, don't do anything
+  if [[ "$ts" == *:* ]]; then
+    echo "$ts"
+    return 0
+  fi
   # integer‐divide by 60 to get whole minutes
   local mins=$(echo "$ts/60" | bc )
   # subtract (mins*60) to get the leftover seconds (float)
@@ -167,7 +172,7 @@ find_prior_black() {
   # $2: file
   # [$3]: search_window
 
-  guess_time="$1"
+  guess_time=$(to_seconds "$1")
   file="$2"
   if [[ -z "$3" ]]; then
     search_window=""
