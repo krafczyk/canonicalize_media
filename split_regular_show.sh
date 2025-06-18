@@ -81,7 +81,11 @@ if [[ -z ${cut_point+x} ]]; then
 
   >&2 echo "likely title card time: $likely_title_card_time -> $(to_timecode $likely_title_card_time)"
 
-  cut_point=$(find_prior_black "$likely_title_card_time" "$file" 3)
+  cut_point=$(find_prior_black "$likely_title_card_time" "$file" 5)
+  if [ "$cut_point" == "ERROR" ]; then
+    echo "No black frame found before $likely_title_card_time in $file"
+    exit 1
+  fi
   cut_point=$( echo "$cut_point - 0.1" | bc -l )
 fi;
 
@@ -97,72 +101,14 @@ if [ "$mode" == "simple" ]; then
 fi
 
 if [ "$mode" == "precise" ]; then
-  ######### 2. compute bitrate ###################################################
-  bits=$(( size * 8 ))
-  bps=$(awk "BEGIN {printf \"%d\", $bits / $duration}")   # bits / second
-  kbps=$(( bps / 1000 ))k                                 # for ffmpeg
-
-  echo "kbps: $kbps"
-
-  # optional convenience: gather the x265 knobs in shell vars
-  # These are SDR settings for this particular set of files
-  x265_p1="pass=1:profile=main10:level=4:no-slow-firstpass=1"
-  x265_p2="pass=2:profile=main10:level=4:colorprim=bt709:transfer=bt709:colormatrix=bt709"
-
+  >&2 echo "Using cut point $cut_point"
   cut_timepoint=$(to_timecode "$cut_point")
-
-  # include metadata about the source file
-  meta=( -map 0 -map_metadata 0 -map_chapters 0 )
-
-  copy=( -c:a copy -c:s copy -c:t copy )
-
-  first_pass_args=(
-    -map 0:v:0
-    -c:v libx265 -preset slow
-    -pix_fmt yuv420p10le
-    -b:v "$kbps"
-    -profile:v main10 -level:v 4.0
-    -x265-params "$x265_p1"
-    -an -f null
-  )
-
-  second_pass_args=(
-    "${meta[@]}"
-    -color_primaries bt709
-    -color_trc bt709
-    -colorspace bt709
-    -c:v libx265 -preset slow
-    -pix_fmt yuv420p10le
-    -b:v "$kbps"
-    -profile:v main10 -level:v 4.0
-    -x265-params "$x265_p2"
-    "${copy[@]}"
-  )
-
-
+  >&2 echo "Cut timepoint: $cut_timepoint"
   # First Half
-
-  set -x
-  ############################################
-  # 1st pass  (analysis only – writes FFmpeg2pass-0.log)
-  ffmpeg -y "${hwdec[@]}" -i "$file" -to "$cut_timepoint" \
-         "${first_pass_args[@]}" /dev/null
-
-  ############################################
-  # 2nd pass  (actual encode)
-  ffmpeg -y "${hwdec[@]}" -i "$file" -to "$cut_timepoint" \
-         "${second_pass_args[@]}" segment_001.mkv
+  precise_reencode segment_001.mkv -i "$file" -to "$cut_timepoint"
 
   # Second Half
-  # 1st pass  (analysis only – writes FFmpeg2pass-0.log)
-  ffmpeg -y "${hwdec[@]}" -i "$file" -ss "$cut_timepoint"  \
-         "${first_pass_args[@]}" /dev/null
-
-  ############################################
-  # 2nd pass  (actual encode)
-  ffmpeg -y "${hwdec[@]}" -i "$file" -ss "$cut_timepoint"   \
-         "${second_pass_args[@]}" segment_002.mkv
-  set +x
+  precise_reencode segment_002.mkv -i "$file" -ss "$cut_timepoint"
 fi;
 
 if [ $(ls segment_*.mkv | wc -l) -ne 2 ]; then

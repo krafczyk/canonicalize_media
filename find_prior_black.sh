@@ -28,4 +28,8 @@ else
 fi;
 
 cut_point=$(find_prior_black "${options[@]}")
+if [ "$cut_point" == "ERROR" ]; then
+  echo "No black frame found before $init_point in $input_file"
+  exit 1
+fi
 echo "Closest black frame endpoint: $cut_point -> $(to_timecode $cut_point)"
