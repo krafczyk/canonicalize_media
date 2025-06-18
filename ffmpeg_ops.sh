@@ -210,6 +210,10 @@ find_image() {
 
 
 find_first_occurance_noblack() {
+  # Usage: find_first_occurance_noblack <image_path> [-ss <start_time> -to <end_time>] -i <input_file> [-ss <fine_seek> -to <end_time> ]
+  # Finds the first spot a given image appears in a video file.
+  # Finds the rise in similarity before it reaches its max.
+ 
   local image_path="$1"
   shift
 
