@@ -2,6 +2,7 @@ pyav
 pydantic
 pymediainfo
 setuptools
+numpy
 langcodes
 requests
 rapidfuzz

@@ -5,6 +5,7 @@ from av_info.utils import guess_lang_from_filename
 from dataclasses import dataclass
 from pprint import pprint
 from typing import override, TypedDict
+import sys
 import os
 
 
@@ -17,7 +18,7 @@ class VideoStream:
     level: str
     bit_rate: float # rate kb/s
     bit_depth: int
-    frame_rate: float | None
+    frame_rate: float
     width: int
     height: int
     aspect_ratio: float
@@ -154,7 +155,6 @@ class MediaContainer:
             codec = ms.Format
             level = ms.Format_Level
             profile = ms.Format_Profile
-            bit_rate: float
             if ms.BitRate is None:
                 if "bit_rate" not in fs:
                     raise ValueError("Unable to guess bitrate of video!")
@@ -162,9 +162,11 @@ class MediaContainer:
             else:
                 bit_rate = float(ms.BitRate)/1024.
             bit_depth = ms.BitDepth
-            frame_rate: float|None = None
+            frame_rate: float = 24.
             if ms.FrameRate is not None:
                 frame_rate = float(ms.FrameRate)
+            else:
+                print(f"WARNING: No frame rate found for video stream {idx} in {self.filepath}. Defaulting to 24 fps.", file=sys.stderr)
             width = ms.Width
             height = ms.Height
             aspect_ratio = ms.DisplayAspectRatio
@@ -332,3 +334,14 @@ class Session:
         self.subtitle_streams += file_cont.subtitle
 
         return file_cont
+
+
+def get_hwdec_options(video_stream: VideoStream, device: int|None=None) -> list[str]:
+    if device is None:
+        return []
+    if "hevc" in video_stream.codec.lower():
+        return [ "-hwaccel", "cuda", "-hwaccel_device", str(device), "-c:v", "hevc_cuvid" ]
+    elif "h264" in video_stream.codec.lower():
+        return [ "-hwaccel", "cuda", "-hwaccel_device", str(device), "-c:v", "h264_cuvid" ]
+    else:
+        raise ValueError(f"Unsupported codec for hardware decoding: {video_stream.codec}. Only HEVC and H.264 are supported.")

@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 import langcodes
+import numpy as np
 from langcodes import Language, tag_is_valid
 from collections.abc import Sequence
 import unicodedata
@@ -198,3 +199,42 @@ def normalise_title(title: str, extra_subs: dict[str, str] | None = None) -> str
 def titles_equal(a: str, b: str, extra_subs: dict[str,str] | None = None) -> bool:
     """Case/format-insensitive comparison of two media titles."""
     return normalise_title(a, extra_subs=extra_subs) == normalise_title(b, extra_subs=extra_subs)
+
+
+def to_timecode(ts: str | float | np.float32) -> str:
+    """
+    Translate a numeric timestamp (seconds) or existing timecode to a string in MM:SS.mmm or HH:MM:SS.mmm format.
+    Hours will be elided if zero.
+    If input has a ':' it is returned unchanged.
+    """
+    if isinstance(ts, str) and ':' in ts:
+        return ts
+    seconds = float(ts)
+    mins = int(seconds // 60)
+    secs = seconds - mins * 60
+    return f"{mins:02d}:{secs:06.3f}"
+
+
+def to_seconds(timecode: str) -> float:
+    """
+    Convert a timecode string (HH:MM:SS.mmm, MM:SS.mmm, or SS.mmm) to total seconds.
+    """
+    parts = timecode.split(':')
+    if len(parts) == 3:
+        hours = float(parts[0])
+        minutes = float(parts[1])
+        seconds = float(parts[2])
+    elif len(parts) == 2:
+        hours = 0.0
+        minutes = float(parts[0])
+        seconds = float(parts[1])
+    elif len(parts) == 1:
+        hours = 0.0
+        minutes = 0.0
+        seconds = float(parts[0])
+    else:
+        raise ValueError(f"Invalid timecode format: {timecode}")
+    return hours * 3600 + minutes * 60 + seconds
+
+
+
