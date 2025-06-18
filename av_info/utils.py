@@ -237,4 +237,8 @@ def to_seconds(timecode: str) -> float:
     return hours * 3600 + minutes * 60 + seconds
 
 
-
+def get_device() -> int | None:
+    device = None
+    if os.environ.get("CUDA_VISIBLE_DEVICES") is not None:
+        device = int(os.environ["CUDA_VISIBLE_DEVICES"].split(",")[0])
+    return device

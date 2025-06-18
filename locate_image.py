@@ -2,6 +2,7 @@ import argparse
 from typing import cast
 from av_info.session import MediaContainer
 from av_info.ffmpeg_ops import get_keyframe_times, find_input_file_arg, find_image
+from av_info.utils import get_device
 import os
 
 
@@ -23,9 +24,7 @@ if __name__ == "__main__":
     input_media = MediaContainer(input_file)
     input_media.analyze()
 
-    device = None
-    if os.environ.get("CUDA_VISIBLE_DEVICES") is not None:
-        device = int(os.environ["CUDA_VISIBLE_DEVICES"].split(",")[0])
+    device = get_device()
 
     keyframes = get_keyframe_times(input_media.video[0])
 
