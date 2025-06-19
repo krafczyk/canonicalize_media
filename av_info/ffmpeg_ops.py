@@ -166,8 +166,7 @@ class SeekOptions:
 
         elif mode == "precise" and start_time:
             self.fine_seek = to_timecode(start_time)
-
-        else:
+        elif start_time:
             raise ValueError(f"Invalid mode: {mode}. Use 'course' or 'precise'.")
 
     def to_ffmpeg_args(self) -> list[str]:
