@@ -388,53 +388,53 @@ def find_image(
 #     return to_timecode(likely_secs)
 
 
-# def find_prior_black(initial_guess: Union[str, float], video_file: Union[str, Path],
-#                      search_window: Optional[float] = None, min_duration: float = 0.1,
-#                      pix_th: float = 0.1) -> Union[float, str]:
-#     """
-#     Locate the last black frame before a guessed time in the video.
-#     Returns the timestamp (in seconds) or 'ERROR' if none found.
-#     """
-#     guess_secs = to_seconds(str(initial_guess))
-#     keyframes = get_keyframe_times(video_file)
+def find_prior_black(initial_guess: TimecodeLike, video_stream: VideoStream,
+                     search_window: float | None = None, min_duration: float = 0.1,
+                     pix_th: float = 0.1, device: int|None=None) -> float:
+    """
+    Locate the last black frame before a guessed time in the video.
+    Returns the timestamp (in seconds) or 'ERROR' if none found.
+    """
 
-#     if search_window is not None:
-#         start_secs = guess_secs - search_window
-#         start_secs = closest_keyframe_before(start_secs, keyframes)
-#         end_secs = closest_keyframe_after(guess_secs, keyframes) or guess_secs
-#         if end_secs < start_secs:
-#             raise ValueError("Search window invalid; end before start.")
-#         time_args = ["-ss", to_timecode(start_secs), "-to", to_timecode(end_secs)]
-#     else:
-#         start_secs = 0.0
-#         time_args = ["-to", to_timecode(guess_secs)]
+    guess_secs = to_seconds(initial_guess)
 
-#     cmd = [
-#         "ffmpeg", "-hide_banner", "-nostats",
-#         *hwdec,
-#         *time_args,
-#         "-i", str(video_file),
-#         "-vf", f"blackdetect=d={min_duration}:pix_th={pix_th}",
-#         "-an", "-f", "null", "-"
-#     ]
-#     proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if not search_window:
+        start_time = 0.
+    else:
+        start_time = guess_secs-search_window
 
-#     endpoints: List[float] = []
-#     for line in proc.stderr.splitlines():
-#         # look for black_end value
-#         m = re.search(r'black_end:(\d+\.\d+)', line)
-#         if m:
-#             endpoints.append(float(m.group(1)) + start_secs)
+    end_time = to_seconds(initial_guess)
 
-#     closest = None
-#     min_diff = float('inf')
-#     for t in endpoints:
-#         if t < guess_secs:
-#             diff = guess_secs - t
-#             if diff < min_diff:
-#                 min_diff = diff
-#                 closest = t
+    seek_options = SeekOptions(video_stream, start_time, end_time, mode="course")
+    seek_options.calibrate(method="ffmpeg")
 
-#     if closest is None:
-#         return 'ERROR'
-#     return closest
+    hwdec = get_hwdec_options(video_stream, device=device)
+
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats",
+        *hwdec,
+        *seek_options.to_ffmpeg_args(),
+        "-vf", f"blackdetect=d={min_duration}:pix_th={pix_th}",
+        "-an", "-f", "null", "-"
+    ]
+    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+
+    endpoints: list[float] = []
+    for line in proc.stderr.splitlines():
+        # look for black_end value
+        m = re.search(r'black_end:(\d+\.\d+)', line)
+        if m:
+            endpoints.append(float(m.group(1)) + start_time)
+
+    closest = None
+    min_diff = float('inf')
+    for t in endpoints:
+        if t < guess_secs:
+            diff = guess_secs - t
+            if diff < min_diff:
+                min_diff = diff
+                closest = t
+
+    if closest is None:
+        return -1.
+    return closest

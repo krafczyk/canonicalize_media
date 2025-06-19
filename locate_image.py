@@ -1,7 +1,7 @@
 import argparse
 from typing import cast
 from av_info.session import MediaContainer
-from av_info.ffmpeg_ops import get_keyframe_times, find_image, SeekOptions, to_timecode
+from av_info.ffmpeg_ops import get_keyframe_times, find_image, SeekOptions, to_timecode, find_prior_black
 from av_info.utils import get_device
 import os
 
@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
     keyframes = get_keyframe_times(input_media.video[0])
 
-    seek_options = SeekOptions(input_media.video[0], "11:00", "13:00") 
+    seek_options = SeekOptions(input_media.video[0], "11:00", "13:00", mode="course") 
     seek_options.calibrate(method="ffmpeg", device=get_device())
 
     likely_location = find_image(
@@ -41,3 +41,10 @@ if __name__ == "__main__":
         device=device)
 
     print(f"The image is likely located at: {likely_location:.2f} seconds -> {to_timecode(likely_location)}")
+
+    prior_black = find_prior_black(
+        likely_location,
+        input_media.video[0],
+        10.)
+
+    print(f"The prior black frame is at: {prior_black:.2f} seconds -> {to_timecode(prior_black)}")
