@@ -2,10 +2,67 @@ import subprocess
 import numpy as np
 from numpy.typing import NDArray
 import re
+import sys
 from pathlib import Path
 import tempfile
-from av_info.utils import to_seconds, to_timecode
+from typing import cast
 from av_info.session import VideoStream, get_hwdec_options
+from dataclasses import dataclass
+
+
+TimecodeLike = str | float | np.float32
+
+
+def to_timecode(ts: TimecodeLike) -> str:
+    """
+    Translate a numeric timestamp (seconds) or existing timecode to a string in MM:SS.mmm or HH:MM:SS.mmm format.
+    Hours will be elided if zero.
+    If input has a ':' it is returned unchanged.
+    """
+    if isinstance(ts, str) and ':' in ts:
+        return ts
+    seconds = float(ts)
+    mins = int(seconds // 60)
+    secs = seconds - mins * 60
+    return f"{mins:02d}:{secs:06.3f}"
+
+
+def to_seconds(timecode: TimecodeLike) -> float:
+    """
+    Convert a timecode string (HH:MM:SS.mmm, MM:SS.mmm, or SS.mmm) to total seconds.
+    """
+    if isinstance(timecode, float) or type(timecode) is np.float32:
+        return float(timecode)
+
+    if not isinstance(timecode, str):
+        raise TypeError(f"Expected str or float, got {type(timecode)}")
+
+    parts = timecode.split(':')
+    if len(parts) == 3:
+        hours = float(parts[0])
+        minutes = float(parts[1])
+        seconds = float(parts[2])
+    elif len(parts) == 2:
+        hours = 0.0
+        minutes = float(parts[0])
+        seconds = float(parts[1])
+    elif len(parts) == 1:
+        hours = 0.0
+        minutes = 0.0
+        seconds = float(parts[0])
+    else:
+        raise ValueError(f"Invalid timecode format: {timecode}")
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def is_zero_timecode(ts: TimecodeLike) -> bool:
+    if isinstance(ts, str):
+        if to_seconds(ts) == 0.0:
+            return True
+        else:
+            return False
+    return float(ts) == 0.0
+
 
 def get_keyframe_times(video_stream: VideoStream) -> NDArray[np.float32]:
     """
@@ -66,50 +123,193 @@ def closest_keyframe_after(
     return None if idx >= keyframes.size else keyframes[idx]
 
 
-def find_input_file_arg(args: list[str]) -> str | None:
-    for i, arg in enumerate(args):
-        if arg == '-i' and i + 1 < len(args):
-            return args[i + 1]
-    return None
+class SeekOptions:
+    video_stream: VideoStream
+    target_start_time: str | None = None
+    target_end_time: str | None = None
+    course_seek: str | None = None
+    fine_seek: str | None = None
+    end: str | None = None
+    to: float | None = None
+    true_seek: float | None = None
+    true_fps: float | None = None
+
+    def __init__(self, video_stream: VideoStream, start_time: TimecodeLike|None=None, end_time: TimecodeLike|None=None, keyframes: NDArray[np.float32] | None = None, mode: str="course"):
+        """
+        Initialize seek options with a file path and timecodes.
+        If keyframes are provided, they will be used to adjust the seek times.
+        """
+        if start_time:
+            self.target_start_time = to_timecode(start_time)
+        if end_time:
+            self.target_end_time = to_timecode(end_time)
+
+        if end_time:
+            self.end = to_timecode(end_time)
+            if start_time:
+                self.to = to_seconds(end_time) - to_seconds(start_time)
+
+        self.video_stream = video_stream
+        if keyframes is None:
+            keyframes = get_keyframe_times(video_stream)
+
+        if mode == "course" and start_time:
+            start_secs = to_seconds(str(start_time))
+            if start_secs > 0.0:
+                # find the closest keyframe before the start time
+                nearest_keyframe = closest_keyframe_before(start_secs, keyframes)
+                self.course_seek = to_timecode(nearest_keyframe)
+                self.fine_seek = to_timecode(start_secs - nearest_keyframe)
+            else:
+                self.course_seek = None
+                self.fine_seek = None
+
+        elif mode == "precise" and start_time:
+            self.fine_seek = to_timecode(start_time)
+
+        else:
+            raise ValueError(f"Invalid mode: {mode}. Use 'course' or 'precise'.")
+
+    def to_ffmpeg_args(self) -> list[str]:
+        """
+        Convert the seek options to a list of ffmpeg arguments.
+        """
+        args: list[str] = []
+        if self.course_seek:
+            args.extend(["-ss", self.course_seek])
+        args.extend(["-i", self.video_stream.filepath])
+        if self.fine_seek:
+            args.extend(["-ss", self.fine_seek])
+        if self.to:
+            args.extend(["-t", str(self.to)])
+        return args
+
+    def calibrate(self, num_frames: int=24, column: str="pts_time", method: str ="ffprobe", device: int|None=None):
+        """
+        Calibrate the seek options using ffprobe or ffmpeg to get accurate frame timestamps.
+        """
+        fine_seek = to_seconds(self.fine_seek) if self.fine_seek else 0.
+
+        # Course seek calibration, if course_seek is not defined, we'll calibrate fps
+        if method == "ffprobe":
+            if self.course_seek:
+                seek_options = ["-read_intervals", f"{self.course_seek}%+#{num_frames}" ]
+            else:
+                seek_options = ["-read_intervals", f"0%+#{num_frames}" ]
+
+            cmd = [ 
+                "ffprobe", "-v", "error",
+                *seek_options,
+                "-select_streams", str(self.video_stream.idx),
+                "-show_entries", f"frame={column}",
+                "-of", "csv=p=0",
+                self.video_stream.filepath ]
+            subprocess_result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            ffprobe_output = subprocess_result.stdout.splitlines()
+            frame_vals = np.array(list(map(
+                lambda n: np.float32(n),
+                ffprobe_output)))
+        elif method == "ffmpeg":
+            if self.course_seek:
+                seek_options = [ "-ss", self.course_seek, "-i", self.video_stream.filepath ]
+            else:
+                seek_options = [ "-i", self.video_stream.filepath ]
+
+            hwdec = get_hwdec_options(self.video_stream, device)
+
+            cmd = [
+                "ffmpeg", "-hide_banner", "-copyts", "-vsync", "0",
+                *hwdec,
+                *seek_options,
+                "-frames:v", str(num_frames),
+                "-map", f"0:v:{self.video_stream.idx2}", "-an", "-vf", "showinfo", "-f", "null", "-"]
+            try:
+                subprocess_result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            except subprocess.CalledProcessError as e:
+                print(" ".join(cmd))
+                print(cast(str,e.stdout))
+                print(cast(str,e.stderr))
+                raise
+            ffmpeg_output = subprocess_result.stderr.splitlines()
+            pts_time_re = re.compile(r'pts_time:(\d+\.\d+)')
+            frame_val_list: list[float] = []
+            for line in ffmpeg_output:
+                m = pts_time_re.search(line)
+                if m:
+                    frame_val_list.append(float(m.group(1)))
+            frame_vals = np.array(frame_val_list, dtype=np.float32)
+        else:
+            raise ValueError(f"Invalid method: {method}. Use 'ffprobe' or 'ffmpeg'.")
+
+        first_frame = cast(np.float32, frame_vals[0])
+        last_frame = cast(np.float32, frame_vals[-1])
+
+        # Set the calibrated true FPS
+        true_fps = np.float32((num_frames - 1)/(last_frame-first_frame))
+        self.true_fps = float(true_fps)
+
+        # Check if the course seek is significantly different from the first frame time.
+        if self.course_seek:
+            course_diff = first_frame - to_seconds(self.course_seek)
+            if abs(course_diff) > 1./true_fps:
+                print(f"WARNING: keyframe based course seek not frame accurate. calibrating.", file=sys.stderr)
+                # adjust the course seek so it's frame-perfect 
+                self.course_seek = to_timecode(first_frame)
+                # Theory, we just need to directly adjust fine_seek by the diff to make it frame perfect as well
+                if self.fine_seek:
+                    self.fine_seek = to_timecode(to_seconds(self.fine_seek) - course_diff)
+            fine_seek = to_seconds(self.fine_seek) if self.fine_seek else 0.
+            self.true_seek = to_seconds(self.course_seek) + fine_seek
+        else:
+            if self.fine_seek:
+                self.true_seek = to_seconds(self.fine_seek)
+
+        if self.true_seek is None:
+            self.true_seek = 0.
+
+
+    def get_frame_time(self, n: int, frame_step: int = 1) -> np.float32:
+        """
+        Given a frame number from an ffmpeg statistics extraction,
+        Return the frame's true timestamp in seconds.
+        """
+
+        if self.true_fps is None or self.true_seek is None:
+            base_seek: float = 0
+            if self.course_seek:
+                base_seek += to_seconds(self.course_seek)
+            elif self.fine_seek:
+                base_seek += to_seconds(self.fine_seek)
+
+            if self.video_stream.frame_rate <= 0:
+                raise ValueError("Frame rate must be greater than zero.")
+            return np.float32(base_seek + (n * frame_step) / np.float32(self.video_stream.frame_rate))
+        else:
+            return np.float32(self.true_seek + (n * frame_step) / self.true_fps)
 
 
 def find_image(
     video_stream: VideoStream,
     image_path: str | Path,
-    start_time: str | float | np.float32 = 0.0,
-    end_time: str | float | np.float32 | None = None,
+    seek_options: SeekOptions | None = None,
     frame_step: int = 5,
-    keyframes: NDArray[np.float32] | None = None,
     device: int|None=None) -> np.float32:
     """
     Coarsely locate where an image appears in a video.
     Returns a timecode string.
     """
-    # Prepare keyframes and start time
-    if keyframes is None:
-        keyframes = get_keyframe_times(video_stream)
-
-    range_ops: list[str] = []
-
-    start_secs = to_seconds(str(start_time))
-    start_secs = closest_keyframe_before(start_secs, keyframes)
-
-    if start_secs > 0.:
-        range_ops.append("-ss")
-        range_ops.append(to_timecode(start_secs))
-    if end_time is not None:
-        range_ops.append("-to")
-        range_ops.append(to_timecode(to_seconds(str(end_time))))
-
     # Run ffmpeg SSIM analysis on frames sampled every frame_step
     with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as tmp:
         stats_file = tmp.name
 
+    if seek_options is None:
+        seek_options = SeekOptions(video_stream)
+        seek_options.calibrate()
 
     cmd: list[str] = [
         "ffmpeg", "-hide_banner", "-nostats",
         *get_hwdec_options(video_stream, device),
-        *range_ops,
+        *(seek_options.to_ffmpeg_args()),
         "-i", str(video_stream.filepath),
         "-i", str(image_path),
         "-filter_complex", f"[0:v]framestep={frame_step}[sampled];[sampled][1:v]ssim=stats_file={stats_file}",
@@ -135,7 +335,7 @@ def find_image(
             best_sim = val
             best_frame = frame_nums[i]
 
-    return start_secs + (best_frame * frame_step) / np.float32(video_stream.frame_rate)
+    return seek_options.get_frame_time(best_frame)
 
 
 # def find_first_occurrence_noblack(video_file: Union[str, Path], image_path: Union[str, Path],

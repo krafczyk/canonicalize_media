@@ -25,10 +25,11 @@ class VideoStream:
     color_space: str
     chroma_subsampling: str
     hdr_format: tuple[str, str, str|None] | None
+    idx2: int = -1
 
     @override
     def __str__(self):
-        return f"{self.filepath},{self.idx}: {self.codec}@L{self.level}@{self.profile} {self.bit_rate} {self.bit_depth} {self.frame_rate} {self.width}x{self.height} {self.aspect_ratio} {self.color_space} {self.chroma_subsampling} HDR: {self.hdr_format}"
+        return f"{self.filepath},{self.idx},v:{self.idx2}: {self.codec}@L{self.level}@{self.profile} {self.bit_rate} {self.bit_depth} {self.frame_rate} {self.width}x{self.height} {self.aspect_ratio} {self.color_space} {self.chroma_subsampling} HDR: {self.hdr_format}"
 
 
 @dataclass
@@ -40,10 +41,11 @@ class AudioStream:
     bit_rate: float | None
     language: str | None
     title: str | None
+    idx2: int = -1
 
     @override
     def __str__(self):
-        return f"{self.filepath},{self.idx}: {self.codec} {self.channels} {self.bit_rate} {self.language} {self.title}"
+        return f"{self.filepath},{self.idx},a:{self.idx2}: {self.codec} {self.channels} {self.bit_rate} {self.language} {self.title}"
 
 
 @dataclass
@@ -55,10 +57,11 @@ class SubtitleStream:
     codec_long: str
     language: str
     title: str | None
+    idx2: int = -1
 
     @override
     def __str__(self):
-        return f"{self.filepath},{self.idx}: {self.format} {self.language} {self.title}"
+        return f"{self.filepath},{self.idx},s:{self.idx2}: {self.format} {self.language} {self.title}"
 
 
 @dataclass
@@ -193,7 +196,8 @@ class MediaContainer:
                 aspect_ratio,
                 color_space,
                 chroma_subsampling,
-                hdr
+                hdr,
+                idx2=i
             )
 
             self.video.append(v_stream)
@@ -221,7 +225,8 @@ class MediaContainer:
                 channels,
                 bit_rate,
                 ms.Language if ms.Language else fs.get('language', "und"),
-                fs.get('title', None)
+                fs.get('title', None),
+                idx2=i
             )
 
             self.audio.append(a_stream)
@@ -246,7 +251,8 @@ class MediaContainer:
                 codec,
                 codec_long,
                 language,
-                title
+                title,
+                idx2=i
             )
 
             self.subtitle.append(t_stream)

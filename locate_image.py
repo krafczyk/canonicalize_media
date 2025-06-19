@@ -1,53 +1,43 @@
 import argparse
 from typing import cast
 from av_info.session import MediaContainer
-from av_info.ffmpeg_ops import get_keyframe_times, find_input_file_arg, find_image
+from av_info.ffmpeg_ops import get_keyframe_times, find_image, SeekOptions, to_timecode
 from av_info.utils import get_device
 import os
 
 
 if __name__ == "__main__":
+    from mk_ic import install
+    install()
+
     parser = argparse.ArgumentParser(
         description="Locate an image in a video file using ffmpeg."
     )
-    _ = parser.add_argument("image", help="Path to the image to locate", type=str)
-    _ = parser.add_argument("ffmpeg_args", help="Arguments to pass to ffmpeg", nargs=argparse.REMAINDER)
+    _ = parser.add_argument("--image", help="Path to the image to locate", type=str, required=True)
+    _ = parser.add_argument("--video", help="Path to the video file", type=str, required=True)
+    _ = parser.add_argument("--search-start", help="start time", type=str, default="0")
+    _ = parser.add_argument("--search-end", help="end time", type=str, required=False)
     args = parser.parse_args()
 
     image_path=cast(str,args.image)
-    ffmpeg_args=cast(list[str], args.ffmpeg_args)
+    video_file=cast(str,args.video)
+    search_start=cast(str, args.search_start)
+    arg_search_end = cast(str|None, args.search_end)
 
-    input_file = find_input_file_arg(ffmpeg_args)
-    if not input_file:
-        raise ValueError("No input file specified. Use -i <input_file>.")
-
-    input_media = MediaContainer(input_file)
+    input_media = MediaContainer(video_file)
     input_media.analyze()
 
     device = get_device()
 
     keyframes = get_keyframe_times(input_media.video[0])
 
-    # find start_time preceeded by `-ss`
-    start_time = 0.
-    for i, arg in enumerate(ffmpeg_args):
-        if arg == "-ss" and i + 1 < len(ffmpeg_args):
-            start_time = ffmpeg_args[i + 1]
-            break
-
-    # find end_time preceeded by `-to`
-    end_time = None
-    for i, arg in enumerate(ffmpeg_args):
-        if arg == "-to" and i + 1 < len(ffmpeg_args):
-            end_time = ffmpeg_args[i + 1]
-            break
+    seek_options = SeekOptions(input_media.video[0], "11:00", "13:00") 
+    seek_options.calibrate(method="ffmpeg", device=get_device())
 
     likely_location = find_image(
         input_media.video[0],
         image_path,
-        start_time=start_time,
-        end_time=end_time,
-        keyframes=keyframes,
+        seek_options=seek_options,
         device=device)
 
-    print(f"The image is likely located at: {likely_location:.2f} seconds")
+    print(f"The image is likely located at: {likely_location:.2f} seconds -> {to_timecode(likely_location)}")
