@@ -45,27 +45,3 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print(f"The image is likely located at: {likely_location:.2f} seconds -> {to_timecode(likely_location)}")
-
-    sys.exit(0)
-
-    search_width: float = 10.
-    seek_options = SeekOptions(input_media.video[0], start_time=likely_location-search_width, end_time=likely_location, mode="course")
-    seek_options.calibrate(method="ffmpeg", device=device)
-
-    black_gaps = find_black(
-        seek_options)
-
-    prior_black = None
-    min_diff = float('inf')
-    for bg in black_gaps:
-        t = bg.end
-        if t < likely_location:
-            diff = likely_location - t
-            if diff < min_diff:
-                min_diff = diff
-                prior_black = t
-
-    if prior_black is None:
-        print(f"No prior black frame found before {likely_location:.2f} seconds.")
-    else:
-        print(f"The prior black frame is at: {prior_black:.2f} seconds -> {to_timecode(prior_black)}")
