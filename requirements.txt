@@ -3,6 +3,7 @@ pydantic
 pymediainfo
 setuptools
 numpy
+matplotlib
 langcodes
 requests
 rapidfuzz

@@ -123,6 +123,18 @@ def closest_keyframe_after(
     return None if idx >= keyframes.size else keyframes[idx]
 
 
+def run(cmd:list[str], verbose: bool=False) -> subprocess.CompletedProcess[str]:
+    try:
+        if verbose:
+            print(" ".join(cmd), file=sys.stderr)
+        return subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        if verbose:
+            print("Output:", cast(str,e.stdout), file=sys.stderr)
+            print("Error output:", cast(str,e.stderr), file=sys.stderr)
+        raise
+
+
 class SeekOptions:
     video_stream: VideoStream
     target_start_time: str | None = None
@@ -130,7 +142,7 @@ class SeekOptions:
     course_seek: str | None = None
     fine_seek: str | None = None
     end: str | None = None
-    to: float | None = None
+    dur: float | None = None
     true_seek: float | None = None
     true_fps: float | None = None
 
@@ -143,11 +155,11 @@ class SeekOptions:
             self.target_start_time = to_timecode(start_time)
         if end_time:
             self.target_end_time = to_timecode(end_time)
-
-        if end_time:
             self.end = to_timecode(end_time)
             if start_time:
-                self.to = to_seconds(end_time) - to_seconds(start_time)
+                self.dur = to_seconds(end_time) - to_seconds(start_time)
+            else:
+                self.dur = to_seconds(end_time)
 
         self.video_stream = video_stream
         if keyframes is None:
@@ -169,21 +181,25 @@ class SeekOptions:
         elif start_time:
             raise ValueError(f"Invalid mode: {mode}. Use 'course' or 'precise'.")
 
-    def to_ffmpeg_args(self) -> list[str]:
+    def to_ffmpeg_args(self) -> dict[str, list[str]]:
         """
         Convert the seek options to a list of ffmpeg arguments.
         """
-        args: list[str] = []
+        result: dict[str, list[str]] = {
+            "course": [],
+            "input": ["-i", self.video_stream.filepath],
+            "fine": [],
+        }
         if self.course_seek:
-            args.extend(["-ss", self.course_seek])
-        args.extend(["-i", self.video_stream.filepath])
+            result["course"] = ["-ss", self.course_seek]
+        result["input"] = ["-i", self.video_stream.filepath]
         if self.fine_seek:
-            args.extend(["-ss", self.fine_seek])
-        if self.to:
-            args.extend(["-t", str(self.to)])
-        return args
+            result["fine"].extend(["-ss", self.fine_seek])
+        if self.dur:
+            result["fine"].extend([ "-t", f"{self.dur:.3f}"])
+        return result
 
-    def calibrate(self, num_frames: int=24, column: str="pts_time", method: str ="ffprobe", device: int|None=None):
+    def calibrate(self, num_frames: int=24, column: str="pts_time", method: str ="ffprobe", device: int|None=None, verbose:bool=False):
         """
         Calibrate the seek options using ffprobe or ffmpeg to get accurate frame timestamps.
         """
@@ -203,7 +219,7 @@ class SeekOptions:
                 "-show_entries", f"frame={column}",
                 "-of", "csv=p=0",
                 self.video_stream.filepath ]
-            subprocess_result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            subprocess_result = run(cmd, verbose=verbose)
             ffprobe_output = subprocess_result.stdout.splitlines()
             frame_vals = np.array(list(map(
                 lambda n: np.float32(n),
@@ -222,13 +238,7 @@ class SeekOptions:
                 *seek_options,
                 "-frames:v", str(num_frames),
                 "-map", f"0:v:{self.video_stream.idx2}", "-an", "-vf", "showinfo", "-f", "null", "-"]
-            try:
-                subprocess_result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            except subprocess.CalledProcessError as e:
-                print(" ".join(cmd))
-                print(cast(str,e.stdout))
-                print(cast(str,e.stderr))
-                raise
+            subprocess_result = run(cmd, verbose=verbose)
             ffmpeg_output = subprocess_result.stderr.splitlines()
             pts_time_re = re.compile(r'pts_time:(\d+\.\d+)')
             frame_val_list: list[float] = []
@@ -288,11 +298,12 @@ class SeekOptions:
 
 
 def find_image(
-    video_stream: VideoStream,
+    seek_options: SeekOptions,
     image_path: str | Path,
-    seek_options: SeekOptions | None = None,
     frame_step: int = 5,
-    device: int|None=None) -> np.float32:
+    device: int|None=None,
+    found_thresh: float=10.,
+    verbose:bool=False) -> np.float32:
     """
     Coarsely locate where an image appears in a video.
     Returns a timecode string.
@@ -300,21 +311,20 @@ def find_image(
     # Run ffmpeg SSIM analysis on frames sampled every frame_step
     with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as tmp:
         stats_file = tmp.name
+    stats_file = "ssim.log"
 
-    if seek_options is None:
-        seek_options = SeekOptions(video_stream)
-        seek_options.calibrate()
-
+    video_stream = seek_options.video_stream
+    seek_opts = seek_options.to_ffmpeg_args()
     cmd: list[str] = [
         "ffmpeg", "-hide_banner", "-nostats",
-        *get_hwdec_options(video_stream, device),
-        *(seek_options.to_ffmpeg_args()),
-        "-i", str(video_stream.filepath),
+        *(seek_opts["course"]),
+        *(seek_opts["input"]),
         "-i", str(image_path),
         "-filter_complex", f"[0:v]framestep={frame_step}[sampled];[sampled][1:v]ssim=stats_file={stats_file}",
+        *(seek_opts["fine"]),
         "-f", "null", "-"
     ]
-    _ = subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _ = run(cmd, verbose=verbose)
 
     # Parse stats file
     frame_nums: list[int] = []
@@ -334,7 +344,100 @@ def find_image(
             best_sim = val
             best_frame = frame_nums[i]
 
-    return seek_options.get_frame_time(best_frame)
+    if best_sim < found_thresh:
+        print(f"No significant match found. Best SSIM: {best_sim:.4f} < {found_thresh:.4f}", file=sys.stderr)
+        return np.float32(-1.0)
+
+    # Zoom in on detected area to find best possible frame
+
+    sim_thresh = 0.9*best_sim
+    upper_frame = best_frame
+    lower_frame = best_frame
+    for i in range (best_frame, len(ssim_vals)):
+        if ssim_vals[i] < sim_thresh:
+            break
+        upper_frame = frame_nums[i]
+    for i in range (best_frame, -1, -1):
+        if ssim_vals[i] < sim_thresh:
+            break
+        lower_frame = frame_nums[i]
+
+    upper_frame += 1
+    lower_frame -= 1
+    if lower_frame < 0:
+        lower_frame = 0
+    if upper_frame >= len(frame_nums):
+        upper_frame = len(frame_nums) - 1
+
+    # Build new seek range
+    upper_time = seek_options.get_frame_time(upper_frame, frame_step=frame_step)
+    lower_time = seek_options.get_frame_time(lower_frame, frame_step=frame_step)
+
+    seek_options = SeekOptions(
+        seek_options.video_stream,
+        lower_time,
+        upper_time)
+    seek_opts = seek_options.to_ffmpeg_args()
+
+    with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as tmp:
+        stats_file = tmp.name
+
+    video_stream = seek_options.video_stream
+    cmd: list[str] = [
+        "ffmpeg", "-hide_banner", "-nostats",
+        *get_hwdec_options(video_stream, device),
+        *(seek_opts["course"]),
+        *(seek_opts["input"]),
+        "-i", str(image_path),
+        "-filter_complex", f"ssim=stats_file={stats_file}",
+        *(seek_opts["fine"]),
+        "-f", "null", "-"
+    ]
+    _ = run(cmd, verbose=verbose)
+
+    # Parse stats file
+    frame_nums: list[int] = []
+    ssim_vals: list[float] = []
+    pattern = re.compile(r'n:(\d+).*?\((\d+\.\d+)\)')
+    with open(stats_file, 'r') as f:
+        for line in f:
+            m = pattern.search(line)
+            if m:
+                frame_nums.append(int(m.group(1)))
+                ssim_vals.append(float(m.group(2)))
+
+    best_sim = 0.0
+    best_frame = 0
+    for i, val in enumerate(ssim_vals):
+        if val > best_sim:
+            best_sim = val
+            best_frame = frame_nums[i]
+
+    # Check if there's a plateau
+
+    sim_thresh = best_sim
+    upper_frame = best_frame
+    lower_frame = best_frame
+    for i in range (best_frame, len(ssim_vals)):
+        if ssim_vals[i] < sim_thresh:
+            break
+        upper_frame = frame_nums[i]
+    for i in range (best_frame, -1, -1):
+        if ssim_vals[i] < sim_thresh:
+            break
+        lower_frame = frame_nums[i]
+
+    upper_frame += 1
+    lower_frame -= 1
+    if lower_frame < 0:
+        lower_frame = 0
+    if upper_frame >= len(frame_nums):
+        upper_frame = len(frame_nums) - 1
+
+    # Get 'center' frame
+    best_frame = (upper_frame + lower_frame) // 2
+
+    return seek_options.get_frame_time(best_frame, frame_step=1)
 
 
 # def find_first_occurrence_noblack(video_file: Union[str, Path], image_path: Union[str, Path],
@@ -387,26 +490,23 @@ def find_image(
 #     return to_timecode(likely_secs)
 
 
-def find_prior_black(initial_guess: TimecodeLike, video_stream: VideoStream,
-                     search_window: float | None = None, min_duration: float = 0.1,
-                     pix_th: float = 0.1, device: int|None=None) -> float:
+@dataclass
+class black_gap:
+    start: float
+    end: float
+    duration: float
+
+
+def find_black(seek_options: SeekOptions,
+               min_duration: float = 0.1,
+               pix_th: float = 0.1,
+               device: int|None=None) -> list[black_gap]:
     """
     Locate the last black frame before a guessed time in the video.
     Returns the timestamp (in seconds) or 'ERROR' if none found.
     """
 
-    guess_secs = to_seconds(initial_guess)
-
-    if not search_window:
-        start_time = 0.
-    else:
-        start_time = guess_secs-search_window
-
-    end_time = to_seconds(initial_guess)
-
-    seek_options = SeekOptions(video_stream, start_time, end_time, mode="course")
-    seek_options.calibrate(method="ffmpeg")
-
+    video_stream = seek_options.video_stream
     hwdec = get_hwdec_options(video_stream, device=device)
 
     cmd = [
@@ -418,22 +518,19 @@ def find_prior_black(initial_guess: TimecodeLike, video_stream: VideoStream,
     ]
     proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
 
-    endpoints: list[float] = []
+    black_detect_re = re.compile(
+        r'black_start:(\d+\.\d+) black_end:(\d+\.\d+) black_duration:(\d+\.\d+)'
+    )
+
+    start_time = seek_options.true_seek or 0.
+    endpoints: list[black_gap] = []
     for line in proc.stderr.splitlines():
-        # look for black_end value
-        m = re.search(r'black_end:(\d+\.\d+)', line)
-        if m:
-            endpoints.append(float(m.group(1)) + start_time)
-
-    closest = None
-    min_diff = float('inf')
-    for t in endpoints:
-        if t < guess_secs:
-            diff = guess_secs - t
-            if diff < min_diff:
-                min_diff = diff
-                closest = t
-
-    if closest is None:
-        return -1.
-    return closest
+        # extract black_start and black_end times
+        if m := black_detect_re.search(line):
+            bg = black_gap(
+                start=float(m.group(1))+start_time,
+                end=float(m.group(2))+start_time,
+                duration=float(m.group(3))
+            )
+            endpoints.append(bg)
+    return endpoints
