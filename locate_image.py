@@ -17,6 +17,7 @@ if __name__ == "__main__":
     _ = parser.add_argument("--video", help="Path to the video file", type=str, required=True)
     _ = parser.add_argument("--search-start", help="start time", type=str, required=False)
     _ = parser.add_argument("--search-end", help="end time", type=str, required=False)
+    _ = parser.add_argument("--mode", help="Change behavior", default="best")
     args = parser.parse_args()
 
     image_path=cast(str,args.image)
@@ -38,6 +39,7 @@ if __name__ == "__main__":
         seek_options,
         image_path,
         device=device,
+        mode=cast(str, args.mode),
         verbose=True)
 
     if likely_location < 0.:

@@ -303,11 +303,17 @@ def find_image(
     frame_step: int = 5,
     device: int|None=None,
     found_thresh: float=10.,
+    mode: str="best",
     verbose:bool=False) -> np.float32:
     """
     Coarsely locate where an image appears in a video.
     Returns a timecode string.
     """
+
+    modes = ["first", "center", "last", "best"]
+    if mode not in modes:
+        raise ValueError(f"Invalid mode: {mode}. Use one of {modes}.")
+
     # Run ffmpeg SSIM analysis on frames sampled every frame_step
     with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as tmp:
         stats_file = tmp.name
@@ -315,7 +321,8 @@ def find_image(
 
     video_stream = seek_options.video_stream
     seek_opts = seek_options.to_ffmpeg_args()
-    cmd: list[str] = [
+    cmd: list[str]
+    cmd = [
         "ffmpeg", "-hide_banner", "-nostats",
         *(seek_opts["course"]),
         *(seek_opts["input"]),
@@ -327,8 +334,10 @@ def find_image(
     _ = run(cmd, verbose=verbose)
 
     # Parse stats file
-    frame_nums: list[int] = []
-    ssim_vals: list[float] = []
+    frame_nums: list[int]
+    ssim_vals: list[float]
+    frame_nums = []
+    ssim_vals = []
     pattern = re.compile(r'n:(\d+).*?\((\d+\.\d+)\)')
     with open(stats_file, 'r') as f:
         for line in f:
@@ -383,7 +392,7 @@ def find_image(
         stats_file = tmp.name
 
     video_stream = seek_options.video_stream
-    cmd: list[str] = [
+    cmd = [
         "ffmpeg", "-hide_banner", "-nostats",
         *get_hwdec_options(video_stream, device),
         *(seek_opts["course"]),
@@ -396,8 +405,8 @@ def find_image(
     _ = run(cmd, verbose=verbose)
 
     # Parse stats file
-    frame_nums: list[int] = []
-    ssim_vals: list[float] = []
+    frame_nums = []
+    ssim_vals = []
     pattern = re.compile(r'n:(\d+).*?\((\d+\.\d+)\)')
     with open(stats_file, 'r') as f:
         for line in f:
@@ -413,9 +422,12 @@ def find_image(
             best_sim = val
             best_frame = frame_nums[i]
 
+    if mode == "best":
+        return seek_options.get_frame_time(best_frame, frame_step=1)
+
     # Check if there's a plateau
 
-    sim_thresh = best_sim
+    sim_thresh = best_sim*0.98
     upper_frame = best_frame
     lower_frame = best_frame
     for i in range (best_frame, len(ssim_vals)):
@@ -434,8 +446,14 @@ def find_image(
     if upper_frame >= len(frame_nums):
         upper_frame = len(frame_nums) - 1
 
-    # Get 'center' frame
-    best_frame = (upper_frame + lower_frame) // 2
+    if mode == "first":
+        return seek_options.get_frame_time(lower_frame, frame_step=1)
+
+    elif mode == "center":
+        # Get 'center' frame
+        center = (upper_frame + lower_frame) // 2
+        return seek_options.get_frame_time(center, frame_step=1)
+
 
     return seek_options.get_frame_time(best_frame, frame_step=1)
 
