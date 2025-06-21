@@ -458,56 +458,6 @@ def find_image(
     return seek_options.get_frame_time(best_frame, frame_step=1)
 
 
-# def find_first_occurrence_noblack(video_file: Union[str, Path], image_path: Union[str, Path],
-#                                    start_time: Union[str, float] = 0.0, fps: float = 24.0,
-#                                    thresh_ratio: float = 0.5) -> str:
-#     """
-#     Find the rising edge of SSIM similarity for an image in a video.
-#     """
-#     keyframes = get_keyframe_times(video_file)
-#     start_secs = to_seconds(str(start_time))
-#     start_secs = closest_keyframe_before(start_secs, keyframes)
-
-#     with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as tmp:
-#         stats_file = tmp.name
-
-#     cmd = [
-#         "ffmpeg", "-hide_banner", "-nostats",
-#         *hwdec,
-#         "-ss", to_timecode(start_secs),
-#         "-i", str(video_file),
-#         "-i", str(image_path),
-#         "-filter_complex", f"ssim=stats_file={stats_file}",
-#         "-f", "null", "-"
-#     ]
-#     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-#     # Parse stats file
-#     frame_nums: List[int] = []
-#     ssim_vals: List[float] = []
-#     pattern = re.compile(r'n:(\d+).*?\((\d+\.\d+)\)')
-#     with open(stats_file, 'r') as f:
-#         for line in f:
-#             m = pattern.search(line)
-#             if m:
-#                 frame_nums.append(int(m.group(1)))
-#                 ssim_vals.append(float(m.group(2)))
-
-#     best_sim = max(ssim_vals, default=0.0)
-#     best_idx = ssim_vals.index(best_sim) if best_sim > 0 else 0
-#     best_frame = frame_nums[best_idx]
-
-#     thresh = thresh_ratio * best_sim
-#     first_frame = best_frame
-#     for i in range(best_idx, -1, -1):
-#         if ssim_vals[i] < thresh:
-#             break
-#         first_frame = frame_nums[i]
-
-#     likely_secs = start_secs + first_frame / fps
-#     return to_timecode(likely_secs)
-
-
 @dataclass
 class black_gap:
     start: float
@@ -516,8 +466,9 @@ class black_gap:
 
 
 def find_black(seek_options: SeekOptions,
-               min_duration: float = 0.1,
+               min_duration: float = 0.01,
                pix_th: float = 0.1,
+               verbose: bool = False,
                device: int|None=None) -> list[black_gap]:
     """
     Locate the last black frame before a guessed time in the video.
@@ -527,14 +478,19 @@ def find_black(seek_options: SeekOptions,
     video_stream = seek_options.video_stream
     hwdec = get_hwdec_options(video_stream, device=device)
 
+    seek_opts = seek_options.to_ffmpeg_args()
+
     cmd = [
         "ffmpeg", "-hide_banner", "-nostats",
         *hwdec,
-        *seek_options.to_ffmpeg_args(),
+        *seek_opts["course"],
+        *seek_opts["input"],
         "-vf", f"blackdetect=d={min_duration}:pix_th={pix_th}",
-        "-an", "-f", "null", "-"
+        "-an",
+        *seek_opts["fine"],
+        "-f", "null", "-"
     ]
-    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    proc = run(cmd, verbose=verbose)
 
     black_detect_re = re.compile(
         r'black_start:(\d+\.\d+) black_end:(\d+\.\d+) black_duration:(\d+\.\d+)'

@@ -46,4 +46,5 @@ if __name__ == "__main__":
         print("Image not found in the video.")
         sys.exit(1)
 
-    print(f"The image is likely located at: {likely_location:.2f} seconds -> {to_timecode(likely_location)}")
+    print(f"{to_timecode(likely_location)}")
+    sys.exit(0)
