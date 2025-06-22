@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 from typing import cast
 from av_info.session import VideoStream, get_hwdec_options, MediaContainer
-from av_info.utils import get_device
+from av_info.utils import get_device, DeviceType
 from dataclasses import dataclass
 
 
@@ -124,7 +124,7 @@ def closest_keyframe_after(
     return None if idx >= keyframes.size else keyframes[idx]
 
 
-def run(cmd:list[str], capture_output=True, verbose: bool=False) -> subprocess.CompletedProcess[str]:
+def run(cmd:list[str], capture_output:bool=True, verbose: bool=False) -> subprocess.CompletedProcess[str]:
     try:
         if verbose:
             print(" ".join(cmd), file=sys.stderr)
@@ -512,7 +512,7 @@ def find_black(seek_options: SeekOptions,
     return endpoints
 
 
-def x265_2pass(video: MediaContainer, output: str, start: str|None=None, end: str|None=None, verbose: bool=False, device:int |None=None):
+def x265_2pass(video: MediaContainer, output: str, start: str|None=None, end: str|None=None, verbose: bool=False, device:DeviceType=None):
     vid_stream = video.video[0]
     kbps = int(vid_stream.bit_rate)  # convert to kbps
     if not device:
@@ -594,8 +594,8 @@ def x265_2pass(video: MediaContainer, output: str, start: str|None=None, end: st
     _ = run(cmd, capture_output=False, verbose=verbose)
 
 
-def reencode(video: MediaContainer, output: str, start: str|None=None, end: str|None=None, verbose: bool=False):
+def reencode(video: MediaContainer, output: str, start: str|None=None, end: str|None=None, verbose: bool=False, device:DeviceType=None):
     if video.video[0].codec in ["x264", "HEVC"]:
-        return x265_2pass(video, output, start, end, verbose=verbose)
+        return x265_2pass(video, output, start, end, verbose=verbose, device=device)
     else:
         raise ValueError(f"Unsupported codec: {video.video[0].codec}. Only x265 is supported for 2-pass re-encoding.")

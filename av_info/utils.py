@@ -3,7 +3,6 @@ import os
 import sys
 from pathlib import Path
 import langcodes
-import numpy as np
 from langcodes import Language, tag_is_valid
 from collections.abc import Sequence
 import unicodedata
@@ -203,7 +202,10 @@ def titles_equal(a: str, b: str, extra_subs: dict[str,str] | None = None) -> boo
     return normalise_title(a, extra_subs=extra_subs) == normalise_title(b, extra_subs=extra_subs)
 
 
-def get_device() -> int | None:
+DeviceType = int | None  # Type alias for device ID, can be None if no device is set
+
+
+def get_device() -> DeviceType:
     device = None
     if os.environ.get("CUDA_VISIBLE_DEVICES") is not None:
         device = int(os.environ["CUDA_VISIBLE_DEVICES"].split(",")[0])
