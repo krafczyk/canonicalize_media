@@ -305,6 +305,7 @@ def find_image(
     frame_step: int = 5,
     device: int|None=None,
     found_thresh: float=10.,
+    keyframes: NDArray[np.float32] | None=None,
     mode: str="best",
     verbose:bool=False) -> np.float32:
     """
@@ -387,7 +388,9 @@ def find_image(
     seek_options = SeekOptions(
         seek_options.video_stream,
         lower_time,
-        upper_time)
+        upper_time,
+        keyframes=keyframes)
+    seek_options.calibrate()
     seek_opts = seek_options.to_ffmpeg_args()
 
     with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as tmp:
@@ -512,7 +515,7 @@ def find_black(seek_options: SeekOptions,
     return endpoints
 
 
-def x265_2pass(video: MediaContainer, output: str, start: str|None=None, end: str|None=None, verbose: bool=False, device:DeviceType=None):
+def x265_2pass(video: MediaContainer, output: str, start: str|None=None, end: str|None=None, verbose: bool=False, keyframes: NDArray[np.float32] | None=None,  device:DeviceType=None):
     vid_stream = video.video[0]
     kbps = int(vid_stream.bit_rate)  # convert to kbps
     if not device:
@@ -520,7 +523,7 @@ def x265_2pass(video: MediaContainer, output: str, start: str|None=None, end: st
 
     hwdec = get_hwdec_options(vid_stream, device=device)
 
-    seek_options = SeekOptions(vid_stream, start, end, mode="course")
+    seek_options = SeekOptions(vid_stream, start, end, mode="course", keyframes=keyframes)
     seek_options.calibrate(method="ffmpeg", device=device, verbose=verbose)
 
     if vid_stream.bit_depth != 10:

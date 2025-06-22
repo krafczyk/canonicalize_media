@@ -20,7 +20,6 @@ def main() -> None:
     _ = parser.add_argument("--search-start", help="start time", type=str, required=False)
     _ = parser.add_argument("--search-end", help="end time", type=str, required=False)
     _ = parser.add_argument("--device", help="Specify a device", type=int, required=False)
-    _ = parser.add_argument("--mode", help="Change behavior", default="best")
     args = parser.parse_args()
 
     image_path=cast(str,args.image)
@@ -60,14 +59,17 @@ def main() -> None:
 
     device = cast(int|None, args.device)
 
-    seek_options = SeekOptions(input_media.video[0], search_start, arg_search_end, mode="course") 
+    keyframes = get_keyframe_times(input_media.video[0])
+
+    seek_options = SeekOptions(input_media.video[0], search_start, arg_search_end, mode="course", keyframes=keyframes) 
     seek_options.calibrate(method="ffmpeg", device=device, verbose=True)
 
     im_location = find_image(
         seek_options,
         image_path,
         device=device,
-        mode=cast(str, args.mode),
+        mode="first",
+        keyframes=keyframes,
         verbose=True)
 
     if im_location < 0.:
