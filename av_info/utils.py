@@ -1,5 +1,6 @@
 import re
 import os
+import sys
 from pathlib import Path
 import langcodes
 import numpy as np
@@ -207,3 +208,8 @@ def get_device() -> int | None:
     if os.environ.get("CUDA_VISIBLE_DEVICES") is not None:
         device = int(os.environ["CUDA_VISIBLE_DEVICES"].split(",")[0])
     return device
+
+
+def die(message: str, exit_code: int=1):
+    print(message, file=sys.stderr)
+    sys.exit(exit_code)

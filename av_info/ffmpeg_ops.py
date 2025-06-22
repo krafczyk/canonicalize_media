@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 import tempfile
 from typing import cast
-from av_info.session import VideoStream, get_hwdec_options
+from av_info.session import VideoStream, get_hwdec_options, MediaContainer
+from av_info.utils import get_device
 from dataclasses import dataclass
 
 
@@ -123,15 +124,16 @@ def closest_keyframe_after(
     return None if idx >= keyframes.size else keyframes[idx]
 
 
-def run(cmd:list[str], verbose: bool=False) -> subprocess.CompletedProcess[str]:
+def run(cmd:list[str], capture_output=True, verbose: bool=False) -> subprocess.CompletedProcess[str]:
     try:
         if verbose:
             print(" ".join(cmd), file=sys.stderr)
-        return subprocess.run(cmd, check=True, capture_output=True, text=True)
+        return subprocess.run(cmd, check=True, capture_output=capture_output, text=capture_output)
     except subprocess.CalledProcessError as e:
+        print(verbose)
         if verbose:
-            print("Output:", cast(str,e.stdout), file=sys.stderr)
-            print("Error output:", cast(str,e.stderr), file=sys.stderr)
+            print("Output:", cast(str,e.stdout))
+            print("Error output:", cast(str,e.stderr))
         raise
 
 
@@ -466,7 +468,7 @@ class black_gap:
 
 
 def find_black(seek_options: SeekOptions,
-               min_duration: float = 0.01,
+               min_duration: float = 0.1,
                pix_th: float = 0.1,
                verbose: bool = False,
                device: int|None=None) -> list[black_gap]:
@@ -508,3 +510,92 @@ def find_black(seek_options: SeekOptions,
             )
             endpoints.append(bg)
     return endpoints
+
+
+def x265_2pass(video: MediaContainer, output: str, start: str|None=None, end: str|None=None, verbose: bool=False, device:int |None=None):
+    vid_stream = video.video[0]
+    kbps = int(vid_stream.bit_rate)  # convert to kbps
+    if not device:
+        device = get_device()
+
+    hwdec = get_hwdec_options(vid_stream, device=device)
+
+    seek_options = SeekOptions(vid_stream, start, end, mode="course")
+    seek_options.calibrate(method="ffmpeg", device=device, verbose=verbose)
+
+    if vid_stream.bit_depth != 10:
+        raise ValueError("x265_2pass requires 10-bit video input.")
+
+    # include metadata about the source file
+    meta=["-map", "0", "-map_metadata", "0", "-map_chapters", "0"]
+
+    copy=[ "-c:a", "copy", "-c:s", "copy", "-c:t", "copy" ]
+
+    pixfmt = "yuv420p10le"
+    color_primaries = "bt709"
+
+    # optional convenience: gather the x265 knobs in shell vars
+    # These are SDR settings for this particular set of files
+    x265_p1="pass=1:profile=main10:level=4:no-slow-firstpass=1"
+    x265_p2=f"pass=2:profile=main10:level=4:colorprim={color_primaries}:transfer={color_primaries}:colormatrix={color_primaries}"
+
+    first_pass_args=[
+      "-map", "0:v:0",
+      "-c:v", "libx265", "-preset", "slow",
+      "-pix_fmt", pixfmt,
+      "-b:v", f"{kbps}k",
+      "-profile:v", "main10", "-level:v", "4.0",
+      "-x265-params", x265_p1,
+      "-an", "-f", "null"
+    ]
+
+    second_pass_args=[
+      *meta,
+      "-color_primaries", color_primaries,
+      "-color_trc", color_primaries,
+      "-colorspace", color_primaries,
+      "-c:v", "libx265", "-preset", "slow",
+      "-pix_fmt", pixfmt, "-b:v", f"{kbps}k",
+      "-profile:v", "main10", "-level:v", "4.0",
+      "-x265-params", x265_p2,
+      *copy
+    ]
+
+    cmd: list[str]
+
+    seek_opts = seek_options.to_ffmpeg_args()
+
+    # First Half
+    ############################################
+    # 1st pass  (analysis only – writes FFmpeg2pass-0.log)
+    cmd = [
+        "ffmpeg", "-y",
+        *hwdec,
+        *seek_opts["course"],
+        *seek_opts["input"],
+        *first_pass_args,
+        *seek_opts["fine"],
+        "/dev/null"
+
+    ]
+    _ = run(cmd, capture_output=False, verbose=verbose)
+
+    ############################################
+    # 2nd pass  (actual encode)
+    cmd = [
+        "ffmpeg", "-y",
+        *hwdec,
+        *seek_opts["course"],
+        *seek_opts["input"],
+        *second_pass_args,
+        *seek_opts["fine"],
+        output
+    ]
+    _ = run(cmd, capture_output=False, verbose=verbose)
+
+
+def reencode(video: MediaContainer, output: str, start: str|None=None, end: str|None=None, verbose: bool=False):
+    if video.video[0].codec in ["x264", "HEVC"]:
+        return x265_2pass(video, output, start, end, verbose=verbose)
+    else:
+        raise ValueError(f"Unsupported codec: {video.video[0].codec}. Only x265 is supported for 2-pass re-encoding.")
