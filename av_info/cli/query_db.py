@@ -5,7 +5,10 @@ from typing import cast
 from pprint import pprint
 
 
-if __name__ == "__main__":
+def main() -> None:
+    from mk_ic import install
+    install()
+
     parser = argparse.ArgumentParser()
     _ = parser.add_argument("input", type=str, help="The filepath to use for guessing")
     _ = parser.add_argument("--uid", type=str, help="unique id", required=False)
@@ -34,3 +37,7 @@ if __name__ == "__main__":
         pprint(res)
     else:
         print("No results found.")
+
+
+if __name__ == "__main__":
+    main()

@@ -155,7 +155,7 @@ def build_video_codec_args(vid: VideoStream, target_res: str, force: bool=False)
 
 
 
-if __name__ == "__main__":
+def main() -> None:
     from mk_ic import install
     install()
 
@@ -241,6 +241,7 @@ if __name__ == "__main__":
                 ext="mp4",
                 resolution=res, 
                 edition=cast(str | None, args.edition)))
+            ic(output_filepath)
         else:
             guessed_media = guess(
                 session.video_streams[0].filepath,
@@ -261,6 +262,7 @@ if __name__ == "__main__":
                 ext="mp4",
                 resolution=res, 
                 edition=cast(str | None, args.edition)))
+            ic(output_filepath)
 
     else:
         output_filepath = args_output
@@ -537,3 +539,7 @@ if __name__ == "__main__":
         metadata_filepath = os.path.splitext(output_filepath)[0]+".json"
         with open(metadata_filepath, "w") as f:
             _ = f.write(json.dumps(metadata, indent=4))
+
+
+if __name__ == "__main__":
+    main()

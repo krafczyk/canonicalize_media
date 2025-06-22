@@ -6,7 +6,7 @@ from av_info.utils import get_device
 import sys
 
 
-if __name__ == "__main__":
+def main() -> None:
     from mk_ic import install
     install()
 
@@ -48,3 +48,7 @@ if __name__ == "__main__":
 
     print(f"{to_timecode(likely_location)}")
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

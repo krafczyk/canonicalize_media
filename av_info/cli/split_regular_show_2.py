@@ -8,7 +8,7 @@ import sys
 import os
 
 
-if __name__ == "__main__":
+def main() -> None:
     from mk_ic import install
     install()
 
@@ -92,3 +92,7 @@ if __name__ == "__main__":
     print("Done! Created:")
     print(f"  • {new_name1}")
     print(f"  • {new_name2}")
+
+
+if __name__ == "__main__":
+    main()

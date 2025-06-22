@@ -4,7 +4,8 @@ from av_info.ffmpeg_ops import SeekOptions
 from typing import cast
 import subprocess
 
-if __name__ == "__main__":
+
+def main() -> None:
     from mk_ic import install
     install()
 
@@ -37,3 +38,7 @@ if __name__ == "__main__":
     ]
     print(f"Running command: {' '.join(cmd)}")
     _ = subprocess.run(cmd, check=True)
+
+
+if __name__ == "__main__":
+    main()
