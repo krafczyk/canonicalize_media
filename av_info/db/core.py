@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from typing import override
 
 
 @dataclass
@@ -8,14 +9,22 @@ class BaseInfo:
     title: str
     year: str
 
+    @abstractmethod
+    def fullname(self) -> str:
+        ...
+
 @dataclass
 class MovieInfo(BaseInfo):
-    ...
+    @override
+    def fullname(self) -> str:
+        return f"{self.title} ({self.year})"
 
 
 @dataclass
 class SeriesInfo(BaseInfo):
-    ...
+    @override
+    def fullname(self) -> str:
+        return f"{self.title} ({self.year})"
 
 
 
@@ -24,6 +33,10 @@ class EpisodeInfo(BaseInfo):
     series: SeriesInfo
     season: str
     episode: str
+
+    @override
+    def fullname(self) -> str:
+        return f"{self.series.fullname()} s{int(self.season):02d}e{int(self.episode):02d} - {self.title}"
 
 
 class MetadataProvider(ABC):
