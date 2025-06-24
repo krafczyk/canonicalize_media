@@ -5,6 +5,7 @@ from av_info.utils import guess_lang_from_filename
 from dataclasses import dataclass
 from pprint import pprint
 from typing import override, TypedDict
+from PIL import Image
 import sys
 import os
 
@@ -351,3 +352,11 @@ def get_hwdec_options(video_stream: VideoStream, device: int|None=None) -> list[
         return [ "-hwaccel", "cuda", "-hwaccel_device", str(device), "-c:v", "h264_cuvid" ]
     else:
         raise ValueError(f"Unsupported codec for hardware decoding: {video_stream.codec}. Only HEVC and H.264 are supported.")
+
+
+def create_black_png(video_stream: VideoStream, output: str):
+    if os.path.exists(output):
+        raise FileExistsError(f"Output file {output} already exists.")
+    
+    img = Image.new("RGB", (video_stream.width, video_stream.height), "black")
+    img.save(output, format="PNG")

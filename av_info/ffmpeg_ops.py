@@ -1,11 +1,12 @@
 import subprocess
 import numpy as np
 from numpy.typing import NDArray
+import pandas as pd
 import re
 import sys
 from pathlib import Path
 import tempfile
-from typing import cast
+from typing import cast, BinaryIO, Any
 from av_info.session import VideoStream, get_hwdec_options, MediaContainer
 from av_info.utils import get_device, DeviceType
 from dataclasses import dataclass
@@ -304,6 +305,91 @@ class SeekOptions:
             return np.float32(self.true_seek + (n * frame_step) / self.true_fps)
 
 
+def ssim_eval(
+    seek_options: SeekOptions,
+    image_paths: list[str | Path],
+    columns: list[str] | None = None,
+    frame_step: int = 1,
+    device: int|None=None,
+    verbose: bool=False) -> pd.DataFrame:
+
+    img_options: list[str] = []
+    stats_files: list[Any] = [] # pyright: ignore[reportExplicitAny]
+    filter_1 = ""
+    if frame_step > 1:
+        filter_1 += f"[0:v]framestep={frame_step}[sampled];[sampled]"
+    else:
+        filter_1 += "[0:v]"
+    filter_1 += f"split={len(image_paths)+1}[v0]"
+    filter_2: str = "[v0]showinfo;"
+    for i, image_path in enumerate(image_paths):
+        # Temp files 
+        stats_file = tempfile.NamedTemporaryFile(suffix=".log")
+        stats_files.append(stats_file)
+        img_options.extend(["-i", str(image_path)])
+        filter_1 += f"[s{i+1}]"
+        filter_2 += f"[s{i+1}][{i+1}:v]ssim=stats_file={stats_file.name};"
+
+    filter_graph= filter_1 + ";" + filter_2[:-1]
+
+    hwdec = get_hwdec_options(seek_options.video_stream, device=device)
+
+    seek_opts = seek_options.to_ffmpeg_args(copyts=True)
+    cmd: list[str]
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats",
+        *hwdec,
+        "-copyts",
+        *(seek_opts["course"]),
+        *(seek_opts["input"]),
+        *img_options,
+        "-filter_complex", filter_graph,
+        *(seek_opts["fine"]),
+        "-f", "null", "-"
+    ]
+    result = run(cmd, capture_output=True, verbose=verbose)
+
+    # Parse stats files
+    ssim_vals: list[pd.Series]
+    ssim_vals = []
+    pattern = re.compile(r'n:(\d+).*?\((\d+\.\d+)\)')
+    for i, stats_file in enumerate(stats_files): # pyright: ignore[reportAny]
+        nums: list[int] = []
+        vals: list[float] = []
+        with open(stats_file.name, 'r') as f: # pyright: ignore[reportAny]
+            for line in f:
+                m = pattern.search(line)
+                if m:
+                    nums.append(int(m.group(1)))
+                    vals.append(float(m.group(2)))
+        ssim_vals.append(pd.Series(
+            vals, index=nums,
+            dtype=pd.Float32Dtype(),
+            name=columns[i] if columns else f"ssim_{Path(image_paths[i]).stem}"))
+
+    # Get PTS information    
+    pts_pattern = re.compile("Parsed_showinfo.*n: *([0-9]+) pts: ([0-9]+) ")
+    n: list[int] = []
+    pts_l: list[int] = []
+    for line in result.stderr.splitlines():
+        if m := pts_pattern.search(line):
+            n.append(int(m.group(1)))
+            pts_l.append(int(m.group(2)))
+    pts = pd.Series(
+        pts_l, index=n, dtype=pd.Int32Dtype(), name="pts")
+
+    # Close and remove temporary files
+    for stats_file in stats_files: # pyright: ignore[reportAny]
+        stats_file.close() # pyright: ignore[reportAny]
+
+    # Build final DataFrame
+    df_series: list[pd.Series] = [pts] + ssim_vals
+    df_dict: dict[str, pd.Series] = {
+        str(s.name): s for s in df_series
+    }
+
+    return pd.DataFrame(df_dict)
+
 def find_image(
     seek_options: SeekOptions,
     image_path: str | Path,
@@ -466,6 +552,166 @@ def find_image(
 
 
     return seek_options.get_frame_time(best_frame, frame_step=1)
+
+
+def find_transition(
+    seek_options: SeekOptions,
+    image1_path: str | Path,
+    image2_path: str | Path,
+    device: int|None=None,
+    found_thresh: float=10.,
+    keyframes: NDArray[np.float32] | None=None,
+    verbose:bool=False) -> np.float32:
+    """
+    Coarsely locate where an image appears in a video.
+    Returns a timecode string.
+    """
+
+    # Run ffmpeg SSIM analysis on frames sampled every frame_step
+    with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as tmp:
+        stats_file = tmp.name
+    stats_file = "ssim.log"
+
+    video_stream = seek_options.video_stream
+    seek_opts = seek_options.to_ffmpeg_args()
+    cmd: list[str]
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats",
+        *(seek_opts["course"]),
+        *(seek_opts["input"]),
+        "-i", str(image1_path),
+        "-filter_complex", f"ssim=stats_file={stats_file}",
+        *(seek_opts["fine"]),
+        "-f", "null", "-"
+    ]
+    _ = run(cmd, verbose=verbose)
+
+    # Parse stats file
+    frame_nums: list[int]
+    ssim_vals: list[float]
+    frame_nums = []
+    ssim_vals = []
+    pattern = re.compile(r'n:(\d+).*?\((\d+\.\d+)\)')
+    with open(stats_file, 'r') as f:
+        for line in f:
+            m = pattern.search(line)
+            if m:
+                frame_nums.append(int(m.group(1)))
+                ssim_vals.append(float(m.group(2)))
+
+    best_sim = 0.0
+    best_frame = 0
+    for i, val in enumerate(ssim_vals):
+        if val > best_sim:
+            best_sim = val
+            best_frame = frame_nums[i]
+
+    if best_sim < found_thresh:
+        print(f"No significant match found. Best SSIM: {best_sim:.4f} < {found_thresh:.4f}", file=sys.stderr)
+        return np.float32(-1.0)
+
+    # Zoom in on detected area to find best possible frame
+
+    sim_thresh = 0.9*best_sim
+    upper_frame = best_frame
+    lower_frame = best_frame
+    for i in range (best_frame, len(ssim_vals)):
+        if ssim_vals[i] < sim_thresh:
+            break
+        upper_frame = frame_nums[i]
+    for i in range (best_frame, -1, -1):
+        if ssim_vals[i] < sim_thresh:
+            break
+        lower_frame = frame_nums[i]
+
+    upper_frame += 1
+    lower_frame -= 1
+    if lower_frame < 0:
+        lower_frame = 0
+    if upper_frame >= len(frame_nums):
+        upper_frame = len(frame_nums) - 1
+
+    # Build new seek range
+    upper_time = seek_options.get_frame_time(upper_frame, frame_step=frame_step)
+    lower_time = seek_options.get_frame_time(lower_frame, frame_step=frame_step)
+
+    seek_options = SeekOptions(
+        seek_options.video_stream,
+        lower_time,
+        upper_time,
+        keyframes=keyframes)
+    seek_options.calibrate()
+    seek_opts = seek_options.to_ffmpeg_args()
+
+    with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as tmp:
+        stats_file = tmp.name
+
+    video_stream = seek_options.video_stream
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats",
+        *get_hwdec_options(video_stream, device),
+        *(seek_opts["course"]),
+        *(seek_opts["input"]),
+        "-i", str(image_path),
+        "-filter_complex", f"ssim=stats_file={stats_file}",
+        *(seek_opts["fine"]),
+        "-f", "null", "-"
+    ]
+    _ = run(cmd, verbose=verbose)
+
+    # Parse stats file
+    frame_nums = []
+    ssim_vals = []
+    pattern = re.compile(r'n:(\d+).*?\((\d+\.\d+)\)')
+    with open(stats_file, 'r') as f:
+        for line in f:
+            m = pattern.search(line)
+            if m:
+                frame_nums.append(int(m.group(1)))
+                ssim_vals.append(float(m.group(2)))
+
+    best_sim = 0.0
+    best_frame = 0
+    for i, val in enumerate(ssim_vals):
+        if val > best_sim:
+            best_sim = val
+            best_frame = frame_nums[i]
+
+    if mode == "best":
+        return seek_options.get_frame_time(best_frame, frame_step=1)
+
+    # Check if there's a plateau
+
+    sim_thresh = best_sim*0.98
+    upper_frame = best_frame
+    lower_frame = best_frame
+    for i in range (best_frame, len(ssim_vals)):
+        if ssim_vals[i] < sim_thresh:
+            break
+        upper_frame = frame_nums[i]
+    for i in range (best_frame, -1, -1):
+        if ssim_vals[i] < sim_thresh:
+            break
+        lower_frame = frame_nums[i]
+
+    upper_frame += 1
+    lower_frame -= 1
+    if lower_frame < 0:
+        lower_frame = 0
+    if upper_frame >= len(frame_nums):
+        upper_frame = len(frame_nums) - 1
+
+    if mode == "first":
+        return seek_options.get_frame_time(lower_frame, frame_step=1)
+
+    elif mode == "center":
+        # Get 'center' frame
+        center = (upper_frame + lower_frame) // 2
+        return seek_options.get_frame_time(center, frame_step=1)
+
+
+    return seek_options.get_frame_time(best_frame, frame_step=1)
+
 
 
 @dataclass

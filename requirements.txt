@@ -3,6 +3,8 @@ pydantic
 pymediainfo
 setuptools
 numpy
+pandas
+pillow
 matplotlib
 langcodes
 requests
