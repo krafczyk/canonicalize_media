@@ -32,8 +32,9 @@ def main() -> None:
         "ffmpeg", "-hide_banner",
         *seek_args["course"],
         *seek_args["input"],
-        "-frames:v", "1",
         *seek_args["fine"],
+        "-frames:v", "1",
+        "-update", "1",
         output_filepath
     ]
     print(f"Running command: {' '.join(cmd)}")
