@@ -183,7 +183,7 @@ class SeekOptions:
         elif start_time:
             raise ValueError(f"Invalid mode: {mode}. Use 'course' or 'precise'.")
 
-    def to_ffmpeg_args(self) -> dict[str, list[str]]:
+    def to_ffmpeg_args(self, copyts: bool=False) -> dict[str, list[str]]:
         """
         Convert the seek options to a list of ffmpeg arguments.
         """
@@ -196,7 +196,12 @@ class SeekOptions:
             result["course"] = ["-ss", self.course_seek]
         result["input"] = ["-i", self.video_stream.filepath]
         if self.fine_seek:
-            result["fine"].extend(["-ss", self.fine_seek])
+            if copyts:
+                total_seek = to_seconds(self.course_seek) + to_seconds(self.fine_seek) if self.course_seek else to_seconds(self.fine_seek)
+                total_seek = to_timecode(total_seek)
+                result["fine"].extend(["-ss", total_seek])
+            else:
+                result["fine"].extend(["-ss", self.fine_seek])
         if self.dur:
             result["fine"].extend([ "-t", f"{self.dur:.3f}"])
         return result
