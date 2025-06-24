@@ -255,7 +255,8 @@ def main() -> None:
                 print(f"Could not guess with filepath {session.video_streams[0].filepath}.")
                 sys.exit(1)
 
-            title = guessed_media.title
+            #title = guessed_media.title
+            title = guessed_media.fullname()
             print(f"Found match. [{guessed_media.title} ({guessed_media.year})] imdb_id: [{guessed_media.uid}]")
             output_filepath = str(build_media_path(
                 guessed_media,
