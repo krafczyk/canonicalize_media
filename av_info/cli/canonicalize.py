@@ -241,7 +241,6 @@ def main() -> None:
                 ext="mp4",
                 resolution=res, 
                 edition=cast(str | None, args.edition)))
-            ic(output_filepath)
         else:
             guessed_media = guess(
                 session.video_streams[0].filepath,
@@ -263,7 +262,6 @@ def main() -> None:
                 ext="mp4",
                 resolution=res, 
                 edition=cast(str | None, args.edition)))
-            ic(output_filepath)
 
     else:
         output_filepath = args_output
