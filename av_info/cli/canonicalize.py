@@ -450,6 +450,9 @@ def main() -> None:
             subtitle_map.append((s_stream, "subrip"))
         elif s_stream.codec not in acceptable_subtitle_codecs:
             raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
+        else:
+            # We can copy the subtitle
+            subtitle_map.append((s_stream, s_stream.codec))
 
     # Pass 3: Convert streams to mov_text if possible
     def sub_pass_2(t: tuple[SubtitleStream,str]):
