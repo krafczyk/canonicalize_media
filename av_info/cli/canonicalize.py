@@ -1,5 +1,5 @@
 import argparse
-from av_info.session import VideoStream, SubtitleStream, Session
+from av_info.session import BaseStream, VideoStream, SubtitleStream, Session
 from av_info.utils import version_tuple, ask_continue
 from av_info.db import get_provider
 from av_info.plex import build_media_path, guess
@@ -195,8 +195,6 @@ def main() -> None:
 
     if len(session.video_streams) == 0:
         raise ValueError("No video streams found.")
-    if len(session.video_streams) > 1:
-        raise ValueError("Only one video stream is supported!")
 
     args_res: str | None = cast(str | None, args.res)
     force_res: bool = False
@@ -276,16 +274,24 @@ def main() -> None:
     output_args: list[str] = []
 
     file_idx_map: dict[str,int] = {}
-    idx = 0
+    f_idx = 0
+
+    def f_stream_process(s: BaseStream):
+        nonlocal f_idx
+        if s.filepath not in file_idx_map:
+            file_idx_map[s.filepath] = f_idx
+            f_idx += 1
+
+    def get_f_idx(s: BaseStream) -> int:
+        return file_idx_map[s.filepath]
 
     # Add video stream
+    f_stream_process(session.video_streams[0])
     vid_stream_filepath = session.video_streams[0].filepath
     vid_cont = session.filename_cont_map[vid_stream_filepath]
     stream_id = session.video_streams[0].idx
-    input_args += [ "-i", vid_stream_filepath ]
-    output_args += [ "-map", f"{idx}:{stream_id}" ]
-    file_idx_map[vid_stream_filepath] = idx
-    idx += 1
+    file_idx = get_f_idx(session.video_streams[0])
+    output_args += [ "-map", f"{file_idx}:{stream_id}" ]
 
     # Specify video encoder
     copy_video: bool = cast(bool, args.copy_video)
@@ -294,18 +300,26 @@ def main() -> None:
     else:
         output_args += build_video_codec_args(session.video_streams[0], res, force_res)
 
+    if len(session.video_streams) > 2:
+        raise  ValueError("Only up to two video streams are currently supported!")
+
+    elif len(session.video_streams) > 1:
+        if session.video_streams[1].codec != "mjpeg":
+            raise ValueError("Second video stream must be MJPEG")
+        v_stream = session.video_streams[1]
+        f_stream_process(v_stream)
+        file_idx = get_f_idx(v_stream)
+        stream_id = v_stream.idx
+        output_args += [ "-map", f"{file_idx}:{stream_id}" ]
+        output_args += [ "-c:v", "copy" ]
+
     # Sort audio streams english streams first, 5.1 first
     audio_streams_sorted = sorted(session.audio_streams, key=lambda x: x.channels != 6)
 
     for a_stream in audio_streams_sorted:
-        if a_stream.filepath not in file_idx_map:
-            # Add the audio stream file to the command
-            input_args += [ "-i", a_stream.filepath ]
-            file_idx_map[a_stream.filepath] = idx
-            idx += 1
-
-        stream_id = file_idx_map[a_stream.filepath]
-        output_args += [ "-map", f"{stream_id}:{a_stream.idx}" ]
+        f_stream_process(a_stream)
+        file_idx = get_f_idx(a_stream)
+        output_args += [ "-map", f"{file_idx}:{a_stream.idx}" ]
 
     # Specify audio encoder
     output_args += [ "-c:a", "copy" ]
@@ -314,15 +328,17 @@ def main() -> None:
 
     # Pass 1: Detect MKV necessity
     for s_stream in session.subtitle_streams:
-        if s_stream.codec == "hdmv_pgs_subtitle":
+        if s_stream.codec == "hdmv_pgs_subtitle" or s_stream.format == "hdmv_pgs_subtitle":
             mkv_needed = True
-        elif s_stream.codec == "dvd_subtitle":
+        elif s_stream.codec == "dvd_subtitle" or s_stream.format == "dvd_subtitle":
             mkv_needed = True
         elif s_stream.codec == "ass":
             mkv_needed = True
-        elif s_stream.codec not in acceptable_subtitle_codecs:
+        elif s_stream.codec not in acceptable_subtitle_codecs and s_stream.format not in acceptable_subtitle_codecs:
             raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
 
+    # Handling output directory now since we have enough information to modify the filetype
+    # but before doing subtitle processing as some subtitles take a very long time to process.
     # Handle output file extension validation
     if mkv_needed and ('mp4' in output_filepath):
         output_filepath = output_filepath.replace(".mp4", ".mkv")
@@ -360,11 +376,16 @@ def main() -> None:
     # Build final list of subtitles with their target codecs, and conversion lists
     subtitle_map: list[tuple[SubtitleStream,str]] = []
 
+    # Complex subtitle conversion
     initial_sub_list = session.subtitle_streams.copy()
     conv_id = 0
+    def get_s_codec(s: SubtitleStream) -> str:
+        return s.codec if s.codec != '[0][0][0][0]' else s.format
+
     for s_stream in initial_sub_list:
-        if s_stream.codec == "hdmv_pgs_subtitle":
-            subtitle_map.append((s_stream, s_stream.codec))
+        s_codec = get_s_codec(s_stream)
+        if s_codec == "hdmv_pgs_subtitle":
+            subtitle_map.append((s_stream, s_codec))
             if convert_subtitles and s_stream.language in ("eng", "en"):
                 # Convert PGS subtitles to SRT
                 s_filename = s_stream.filepath
@@ -398,13 +419,14 @@ def main() -> None:
                 # Add the new SRT file to the session
                 srt_cont = session.add_file(srt_filename)
                 # Set the subtitle stream properties
+                f_stream_process(srt_cont.subtitle[0])
                 srt_cont.subtitle[0].language = s_stream.language
                 srt_cont.subtitle[0].title = f"{s_stream.title} (OCR)"
-                subtitle_map.append((srt_cont.subtitle[0], srt_cont.subtitle[0].codec))
+                subtitle_map.append((srt_cont.subtitle[0], get_s_codec(srt_cont.subtitle[0])))
                 conv_id += 1
-        elif s_stream.codec == "dvd_subtitle":
+        elif s_codec == "dvd_subtitle":
             mkv_needed = True
-            subtitle_map.append((s_stream, s_stream.codec))
+            subtitle_map.append((s_stream, s_codec))
             if convert_subtitles and s_stream.language in ("eng", "en"):
                 # Convert VobSub subtitles to SRT
                 s_filename = s_stream.filepath
@@ -442,31 +464,32 @@ def main() -> None:
                 # Set the subtitle stream properties
                 srt_cont.subtitle[0].language = s_stream.language
                 srt_cont.subtitle[0].title = f"{s_stream.title} (OCR)"
-                subtitle_map.append((srt_cont.subtitle[0], srt_cont.subtitle[0].codec))
+                subtitle_map.append((srt_cont.subtitle[0], get_s_codec(srt_cont.subtitle[0])))
                 conv_id += 1
-        elif s_stream.codec == "ass":
+        elif s_codec == "ass":
             mkv_needed = True
-            subtitle_map.append((s_stream, s_stream.codec))
+            subtitle_map.append((s_stream, s_codec))
             subtitle_map.append((s_stream, "subrip"))
-        elif s_stream.codec not in acceptable_subtitle_codecs:
-            raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
+        elif s_codec not in acceptable_subtitle_codecs:
+            raise ValueError(f"Subtitle codec {s_codec} is not supported!")
         else:
             # We can copy the subtitle
-            subtitle_map.append((s_stream, s_stream.codec))
+            subtitle_map.append((s_stream, s_codec))
 
     # Pass 3: Convert streams to mov_text if possible
     def sub_pass_2(t: tuple[SubtitleStream,str]):
         s_stream = t[0]
+        s_codec = get_s_codec(s_stream)
         target_codec = t[1]
-        if s_stream.codec == "hdmv_pgs_subtitle":
+        if s_codec == "hdmv_pgs_subtitle":
             pass
-        elif s_stream.codec == "dvd_subtitle":
+        elif s_codec == "dvd_subtitle":
             pass
-        elif s_stream.codec == "ass":
+        elif s_codec == "ass":
             pass
         else:
             # Otherwise try to convert to mov_text
-            if not mkv_needed and s_stream.codec != "mov_text":
+            if not mkv_needed and s_codec != "mov_text":
                 target_codec = "mov_text"
             else:
                 pass
@@ -481,16 +504,13 @@ def main() -> None:
 
     s_idx = 0
     for s_stream, target_codec in subtitle_streams_sorted:
-        if s_stream.filepath not in file_idx_map:
-            # Add the subtitle stream file to the command
-            input_args += [ "-i", s_stream.filepath ]
-            file_idx_map[s_stream.filepath] = idx
-            idx += 1
-        stream_id = file_idx_map[s_stream.filepath]
-        output_args += [ "-map", f"{stream_id}:{s_stream.idx}" ]
+        f_stream_process(s_stream)
+        file_idx = get_f_idx(s_stream)
+        output_args += [ "-map", f"{file_idx}:{s_stream.idx}" ]
         sub_title = s_stream.title
+        s_codec = get_s_codec(s_stream)
 
-        if s_stream.codec == target_codec:
+        if s_codec == target_codec:
             output_args += [ f"-c:s:{s_idx}", "copy" ]
         else:
             output_args += [ f"-c:s:{s_idx}", target_codec ]
@@ -517,6 +537,13 @@ def main() -> None:
         output_args += [ "-map_chapters", "0"]
 
     output_args += [ "-map_metadata", "0"]
+
+    # Build input argument list
+    input_files = list(file_idx_map.keys())
+    input_files = sorted(input_files, key=lambda x: file_idx_map[x])
+    for input_file in input_files:
+        # Add the input file to the input arguments
+        input_args += [ "-i", f"file:{input_file}" ]
 
     # Add output file
     ffmpeg_cmd += input_args + output_args + [ f"file:{output_filepath}" ]

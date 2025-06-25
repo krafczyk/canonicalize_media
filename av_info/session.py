@@ -3,7 +3,6 @@ from av_info.mediainfo import Menu as MIMenu
 from av_info.ffmpeg import ffmpeg, FFmpegInfo, VideoStreamInfo, AudioStreamInfo, SubtitleStreamInfo
 from av_info.utils import guess_lang_from_filename
 from dataclasses import dataclass
-from pprint import pprint
 from typing import override, TypedDict
 from PIL import Image
 import sys
@@ -11,8 +10,11 @@ import os
 
 
 @dataclass
-class VideoStream:
+class BaseStream:
     filepath: str
+
+@dataclass
+class VideoStream(BaseStream):
     idx: int
     codec: str
     profile: str
@@ -34,8 +36,7 @@ class VideoStream:
 
 
 @dataclass
-class AudioStream:
-    filepath: str
+class AudioStream(BaseStream):
     idx: int
     codec: str
     channels: int
@@ -50,11 +51,10 @@ class AudioStream:
 
 
 @dataclass
-class SubtitleStream:
-    filepath: str
+class SubtitleStream(BaseStream):
     idx: int
-    format: str
     codec: str
+    format: str
     codec_long: str
     language: str
     title: str | None
@@ -66,8 +66,7 @@ class SubtitleStream:
 
 
 @dataclass
-class Menu:
-    filepath: str
+class Menu(BaseStream):
 
     @override
     def __str__(self):
@@ -148,13 +147,39 @@ class MediaContainer:
     def analyze(self):
         ffmpeg_streams: FFmpegStreams = get_ffmpeg_streams(self.ffmpeg)
         mediainfo_streams: MediaInfoStreams = get_mediainfo_streams(self.mediainfo)
-        assert len(ffmpeg_streams['video']) == len(mediainfo_streams['video'])
+        # Sometimes, mjpeg streams are there. These shouldn't count towards the total stream count
+        ffmpeg_vis = list(filter(lambda s: s['codec'] != 'mjpeg', ffmpeg_streams['video']))
+        assert len(ffmpeg_vis) == len(mediainfo_streams['video'])
         assert len(ffmpeg_streams['audio']) == len(mediainfo_streams['audio'])
 
         for i in range(len(ffmpeg_streams['video'])):
             fs = ffmpeg_streams['video'][i]
-            ms = mediainfo_streams['video'][i]
             idx = int(fs['index'])
+            if i > len(mediainfo_streams['video']) - 1:
+                # We have a mjpeg stream probably
+                if fs['codec'] != 'mjpeg':
+                    raise RuntimeError("Expected a mjpeg stream, but got something else.")
+                codec = fs['codec']
+                v_stream = VideoStream(
+                    self.filepath,
+                    idx,
+                    codec,
+                    "unknown",
+                    "unknown",
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "unknown",
+                    "unknown",
+                    None,
+                    idx2=i
+                )
+                self.video.append(v_stream)
+                continue
+            ms = mediainfo_streams['video'][i]
             # Depending on format, ms.ID can be equal to ffmpeg or 1 greater.
             codec = ms.Format
             level = ms.Format_Level
