@@ -188,15 +188,23 @@ def guess_series(
         series_title_tokens = clean_tokens(tokens[-1][:idx])
         series_year_token = None
         series_year = None
+        idx = None
         for i, token in enumerate(series_title_tokens):
             # Remove any year token which may be present
             if year_m := YEAR_TOKEN.fullmatch(token):
                 series_year_token = series_title_tokens.pop(i)
                 series_year = year_m.group(1)
+                idx = i
                 break
 
-        title = " ".join(series_title_tokens).strip()
-        year = series_year or year
+        # strip remaining tokens after year tokens. These are considered noise
+
+        if idx is not None:
+            series_title_tokens = series_title_tokens[:idx]
+
+        series_title = " ".join(series_title_tokens).strip()
+        title = title or series_title
+        year = year or series_year
 
     # First, see if the title is enough for an exact match
     series_results = provider.search_series(
@@ -364,35 +372,56 @@ def guess_movie(
     """
     provider = get_provider(provider)
 
-    path      = Path(path_str)
-    tokens    = tokenize(path)
-
+    # UID search first
     if uid is None:
         imdb_id_m = IMDB_RE.search(path_str)
         uid = imdb_id_m.group(0) if imdb_id_m else None
 
+    if uid:
+        results = provider.search_movie(
+            uid=uid)
+        if len(results) == 0:
+            raise ValueError(f"No results found for uid: {uid}!")
+        if len(results) > 1:
+            raise ValueError(f"More than one result found for uid '{uid}'!")
+        return results[0]
+
+    path      = Path(path_str)
+    tokens    = tokenize(path)
+
     # Build a candidate title: tokens up to the year (if any) or all tokens until first NOISE token
     # first, find the last year token in the path
     idx = None
-    for i, token in enumerate(tokens[-1]):
-        if year_m := YEAR_RE.fullmatch(token):
+    movie_title = None
+    movie_title_tokens = tokens[-1]
+    movie_year = None
+    movie_year_token = None
+    # Look for full year token '(2005)' for example
+    for i, token in enumerate(movie_title_tokens):
+        if year_m := YEAR_TOKEN.fullmatch(token):
+            movie_year_token = movie_title_tokens[i]
+            movie_year = year_m.group(1)
             idx = i
+            break
 
+    if not movie_year:
+        # Fall back to plain year token
+        for i, token in enumerate(movie_title_tokens):
+            if year_m := YEAR_RE.fullmatch(token):
+                movie_year_token = token
+                movie_year = year_m.group(0)
+                idx = i
+                break
+
+    # Strip tokens after the year tokens. These are assumed to be noise
     if idx:
-        title_tokens = clean_tokens(tokens[-1][:idx])
-    else:
-        title_tokens = clean_tokens(tokens[-1])
+        movie_title_tokens = movie_title_tokens[:idx]
 
-    # Check if the last token is a year specifier
-    year_token_val = None
-    if year_m := YEAR_TOKEN.fullmatch(title_tokens[-1]):
-        year_token_val = year_m.group(1)
+    movie_title_tokens = clean_tokens(movie_title_tokens)
+    movie_title = " ".join(movie_title_tokens).strip()
 
-    if not year:
-        year = year_token_val
-
-    if not title:
-        title = " ".join(title_tokens).strip()
+    title = title or movie_title
+    year = year or movie_year
 
     results = provider.search_movie(
         uid=uid,

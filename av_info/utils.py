@@ -128,8 +128,14 @@ def first_year(year_field: str) -> str:
 
 def tokenize(path: Path) -> list[list[str]]:
     """Split each path segment (dirs + filename without extension) on space, doct, underscore and dash."""
+    if str(path) == "":
+        return []
+
     # 1. Remove the extension from the final segment
-    no_ext = path.with_suffix('')
+    try:
+        no_ext = path.with_suffix('')
+    except ValueError:
+        return []
     # 2. Build a list of the segments, skipping root (Unix "/") or drive letters (Windows "C:\\")
     segments = [
         seg for seg in no_ext.parts
