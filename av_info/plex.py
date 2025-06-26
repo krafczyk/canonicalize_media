@@ -423,6 +423,12 @@ def guess_movie(
     title = title or movie_title
     year = year or movie_year
 
+    if verbose:
+        print("Movie metadata search initiated with:")
+        print(f"  uid: {uid}")
+        print(f"  title: {title}")
+        print(f"  year: {year}")
+
     results = provider.search_movie(
         uid=uid,
         title=title,
@@ -439,6 +445,9 @@ def guess_movie(
 
             if len(matches) == 1:
                 return matches[0]
+
+            print("Multiple exact matches found for title:", title)
+            print(matches)
 
             if year:
                 year_matches = [
