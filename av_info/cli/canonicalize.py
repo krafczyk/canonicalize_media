@@ -180,6 +180,7 @@ def main() -> None:
     _ = parser.add_argument("--copy-video", help="Copy the video stream. Skip Heuristic/Transcoding", action="store_true")
     _ = parser.add_argument("--metadata-provider", help="Metadat provider to use", default="omdb", type=str)
     _ = parser.add_argument("--dry-run", help="Only construct the command, do not run it.", action="store_true")
+    _ = parser.add_argument("--verbose", help="Whether or not to run in verbose mode", action="store_true")
     args = parser.parse_args()
 
     inputs: list[str] = cast(list[str], args.input)
@@ -231,6 +232,7 @@ def main() -> None:
     season: str | None = cast(str | None, args.season)
     episode: str | None = cast(str |None, args.episode)
     provider = get_provider(cast(str,args.metadata_provider))
+    verbose: bool = cast(bool, args.verbose)
 
     if args_output is None:
         if uid is not None:
@@ -253,7 +255,8 @@ def main() -> None:
                 series_uid=series_uid,
                 season=season,
                 episode=episode,
-                provider=provider)
+                provider=provider,
+                verbose=verbose)
 
             if not guessed_media:
                 print(f"Could not guess with filepath {session.video_streams[0].filepath}.")
