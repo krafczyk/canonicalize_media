@@ -270,6 +270,34 @@ def guess_episode(
     """
     provider = get_provider(provider)
 
+    # UID search first
+    if uid is None:
+        imdb_id_m = IMDB_RE.search(path_str)
+        uid = imdb_id_m.group(0) if imdb_id_m else None
+
+    if series_uid:
+        # Use uid to get the series
+        results = provider.search_series(
+            uid=series_uid
+        )
+        if len(results) == 0:
+            raise ValueError(f"No series found for uid: {uid}!")
+        if len(results) > 1:
+            raise ValueError(f"More than one series found for uid '{uid}'!")
+        series = results[0]
+
+        if not season or not episode:
+            raise ValueError("Must provide season and episode when using series_uid.")
+
+        result = provider.get_episode(
+            series,
+            season=season,
+            episode=episode
+        )
+        if result is None:
+            raise ValueError(f"No episode found for series {series.title} (uid: {series.uid})!")
+        return result
+
     # guess series
     series = guess_series(
         path_str,

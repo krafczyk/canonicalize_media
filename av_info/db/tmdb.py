@@ -174,7 +174,7 @@ def _build_episode(item: _EpisodeResult, series: SeriesInfo) -> EpisodeInfo:
     if item["show_id"] != int(series.uid.split(":")[-1]) and not series.uid.startswith("tmdb:"):
         raise ValueError("Episode does not belong to supplied series")
 
-    uid = item.get("imdb_id") or f"tmdb:{item['id']}"
+    uid = f"tmdb:{item['id']}" or item.get("imdb_id") or ""
     return EpisodeInfo(
         uid=uid,
         title=item["name"],

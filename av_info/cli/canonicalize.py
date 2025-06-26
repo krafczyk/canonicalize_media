@@ -168,6 +168,8 @@ def main() -> None:
     _ = parser.add_argument("--title", "-t", help="The title of the movie to use")
     _ = parser.add_argument("--year", help="Override year in some circumstances", type=str, required=False)
     _ = parser.add_argument("--series-uid", help="Override series entry in some circumstances", type=str, required=False)
+    _ = parser.add_argument("--season", help="Override season", type=str, required=False)
+    _ = parser.add_argument("--episode", help="Override episode", type=str, required=False)
     _ = parser.add_argument("--skip-if-exists", help="Skip processing if the output file already exists.", action="store_true")
     _ = parser.add_argument("--res", "-r", help="The resolution category to use")
     _ = parser.add_argument("--edition", "-e", help="Special 'editions' such as 'Extended'")
@@ -225,6 +227,8 @@ def main() -> None:
     series_uid = cast(str | None, args.series_uid)
     uid: str | None = cast(str | None, args.uid)
     title: str | None = cast(str |None, args.title)
+    season: str | None = cast(str | None, args.season)
+    episode: str | None = cast(str |None, args.episode)
     provider = get_provider(cast(str,args.metadata_provider))
 
     if args_output is None:
@@ -246,6 +250,8 @@ def main() -> None:
                 title=title,
                 year=year,
                 series_uid=series_uid,
+                season=season,
+                episode=episode,
                 provider=provider)
 
             if not guessed_media:
