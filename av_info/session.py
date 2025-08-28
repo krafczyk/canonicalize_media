@@ -22,6 +22,7 @@ class VideoStream(BaseStream):
     bit_rate: float # rate kb/s
     bit_depth: int
     frame_rate: float
+    duration: float
     width: int
     height: int
     aspect_ratio: float
@@ -43,6 +44,7 @@ class AudioStream(BaseStream):
     bit_rate: float | None
     language: str | None
     title: str | None
+    duration: float
     idx2: int = -1
 
     @override
@@ -169,6 +171,7 @@ class MediaContainer:
                     0,
                     0,
                     0,
+                    0.,
                     0,
                     0,
                     0,
@@ -192,6 +195,11 @@ class MediaContainer:
                 bit_rate = float(ms.BitRate)/1024.
             bit_depth = ms.BitDepth
             frame_rate: float = 24.
+            duration: float = 0.
+            if ms.Duration is not None:
+                duration = float(ms.Duration)
+            else:
+                print(f"WARNING: No stream duration found for video stream {idx} in {self.filepath}.")
             if ms.FrameRate is not None:
                 frame_rate = float(ms.FrameRate)
             else:
@@ -217,6 +225,7 @@ class MediaContainer:
                 bit_rate,
                 bit_depth,
                 frame_rate,
+                duration,
                 width,
                 height,
                 aspect_ratio,
@@ -243,6 +252,11 @@ class MediaContainer:
                     bit_rate = None
             else:
                 bit_rate = ms.BitRate/1024.
+            duration: float = 0.
+            if ms.Duration is not None:
+                duration = float(ms.Duration)
+            else:
+                print(f"WARNING: No stream duration found for video stream {idx} in {self.filepath}.")
 
             a_stream = AudioStream(
                 self.filepath,
@@ -252,6 +266,7 @@ class MediaContainer:
                 bit_rate,
                 ms.Language if ms.Language else fs.get('language', "und"),
                 fs.get('title', None),
+                duration,
                 idx2=i
             )
 
