@@ -440,40 +440,43 @@ def main() -> None:
             if convert_subtitles and s_stream.language in ("eng", "en"):
                 # Convert VobSub subtitles to SRT
                 s_filename = s_stream.filepath
-                srt_filename_final = f"{s_filename}.{conv_id}.srt"
-                srt_filename = f"{s_filename}.srt"
+                stub_name = f"{os.path.splitext(s_filename)[0]}_{conv_id}"
+                srt_filename_final = f"{stub_name}.srt"
                 if not os.path.exists(srt_filename_final):
-                    stub_name = f"{s_filename}"
-                    stub_no_extension = os.path.splitext(stub_name)[0]
                     print(f"Encountered VobSub subtitle stream [{s_stream.title}] ({s_stream.idx})...")
-                    idx_filename = f"{stub_no_extension}.idx"
-                    sub_filename = f"{stub_no_extension}.sub"
+                    idx_filename = f"{stub_name}.idx"
+                    sub_filename = f"{stub_name}.sub"
                     if not os.path.exists(idx_filename) or not os.path.exists(sub_filename):
                         # Extract the VobSub subtitle
                         print(f"Extracting to {stub_name}")
                         # mkvextract tracks "$input_file" "$idx:$output_file"
-                        out = subprocess.run([
+                        cmd = [
                             "mkvextract", "tracks",
                             s_stream.filepath,
-                            f"{s_stream.idx}:{stub_name}"], capture_output=True)
+                            f"{s_stream.idx}:{stub_name}" ]
+                        if verbose:
+                            print(f"Running command: {cmd}")
+                        out = subprocess.run(cmd, capture_output=True)
                         if out.returncode != 0:
-                            raise ValueError(f"Failed to extract VobSub subtitle stream: {out.stderr.decode('utf-8')}")
+                            raise ValueError(f"Failed to extract VobSub subtitle stream: {out.stdout.decode('utf-8')} {out.stderr.decode('utf-8')}")
                     # Convert to SRT
                     print(f"Converting to SRT")
                     # ./VobSub2SRT/bin/vobsub2srt subtitle
-                    out = subprocess.run([
-                        "./VobSub2SRT/bin/vobsub2srt", stub_no_extension
-                        ], capture_output=True)
+                    cmd = [
+                        "./VobSub2SRT/bin/vobsub2srt", stub_name ]
+                    if verbose:
+                        print(f"Running command: {cmd}")
+                    out = subprocess.run(cmd, capture_output=True)
                     if out.returncode != 0:
                         raise ValueError(f"Failed to convert VobSub subtitle to SRT: {out.stderr.decode('utf-8')}")
                     # Remove the original SUP file
                     os.remove(idx_filename)
                     os.remove(sub_filename)
-                    if not os.path.exists(srt_filename):
+                    if not os.path.exists(srt_filename_final):
                         raise ValueError(f"Failed to convert VobSub subtitle to SRT: {srt_filename} does not exist.")
-                    shutil.move(srt_filename, srt_filename_final)
+                    #shutil.move(srt_filename, srt_filename_final)
                 # Add the new SRT file to the session
-                srt_cont = session.add_file(srt_filename_final)
+                srt_cont = session.add_file(f"{srt_filename_final}@@English")
                 # Set the subtitle stream properties
                 srt_cont.subtitle[0].language = s_stream.language
                 srt_cont.subtitle[0].title = f"{s_stream.title} (OCR)"
