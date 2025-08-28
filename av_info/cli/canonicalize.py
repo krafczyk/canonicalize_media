@@ -342,7 +342,7 @@ def main() -> None:
             mkv_needed = True
         elif s_stream.codec == "dvd_subtitle" or s_stream.format == "dvd_subtitle":
             mkv_needed = True
-        elif s_stream.codec == "ass":
+        elif s_stream.codec == "ass" or s_stream.format == "ass":
             mkv_needed = True
         elif s_stream.codec not in acceptable_subtitle_codecs and s_stream.format not in acceptable_subtitle_codecs:
             raise ValueError(f"Subtitle codec {s_stream.codec} is not supported!")
