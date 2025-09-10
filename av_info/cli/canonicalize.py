@@ -8,7 +8,6 @@ import subprocess
 import json
 import os
 import sys
-import shutil
 from pprint import pprint
 import traceback
 
