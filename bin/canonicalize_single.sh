@@ -1,2 +1,5 @@
 #!/bin/bash
-canonicalize --yes --skip-if-exists --convert-advanced-subtitles --staging-dir staging --metadata-provider tmdb -i "$1"
+set -e
+
+set -x
+canonicalize --yes --skip-if-exists --convert-advanced-subtitles --staging-dir staging --metadata-provider tmdb "$@"
