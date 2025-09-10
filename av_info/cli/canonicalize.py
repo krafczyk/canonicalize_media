@@ -24,9 +24,9 @@ acceptable_subtitle_codecs = ['subrip', 'mov_text', 'ass', 'hdmv_pgs_subtitle', 
 
 
 width_map: dict[str, tuple[int,...]] = {
-    "480p": (640,),
+    "480p": (640, 720),
     "720p": (1280,),
-    "1080p": (1920,),
+    "1080p": (1920, 1440, 1488),
     "4K": (3840, 4096)
 }
 
@@ -216,6 +216,7 @@ def main() -> None:
     if args_res is None:
         # Guess resolution from video stream
         vid_width = session.video_streams[0].width
+        vid_height = session.video_streams[0].height
         target_res: str|None = None
         for res_name, widths in width_map.items():
             if is_res_match(vid_width, widths):
@@ -223,7 +224,7 @@ def main() -> None:
                 break
 
         if target_res is None:
-            raise ValueError(f"Video resolution {vid_width} didn't match any known resolution")
+            raise ValueError(f"Video resolution {vid_width}x{vid_height} didn't match any known resolution")
         print(f"Video resolution {vid_width} matched target resolution {target_res}.")
         res = target_res
     else:
