@@ -8,6 +8,7 @@ import subprocess
 import json
 import os
 import sys
+import shutil
 from pprint import pprint
 import traceback
 
@@ -454,31 +455,42 @@ def main() -> None:
                 # Convert VobSub subtitles to SRT
                 s_filename = os.path.basename(s_stream.filepath)
                 s_dirname = os.path.dirname(s_stream.filepath)
+                s_ext = os.path.splitext(s_filename)[-1]
                 stub = safe_stub(os.path.splitext(s_filename)[0])
                 stub_name =  f"{stub}_{conv_id}"
                 stub_name_with_dir =  os.path.join(s_dirname, stub_name)
-                srt_filename_final = f"{stub_name}.srt"
-                srt_filename = f"{stub_name}.{conv_id}.srt"
+                srt_filename = f"{stub_name}.srt"
                 srt_filepath = os.path.join(s_dirname, srt_filename)
+
                 if not os.path.exists(srt_filepath):
+                    # Get idx file either from the media container or directly from input.
                     print(f"Encountered VobSub subtitle stream [{s_stream.title}] ({s_stream.idx})...")
                     idx_filename = f"{stub_name}.idx"
                     idx_filepath = os.path.join(s_dirname, idx_filename)
                     sub_filename = f"{stub_name}.sub"
                     sub_filepath = os.path.join(s_dirname, sub_filename)
+
                     if not os.path.exists(idx_filepath) or not os.path.exists(sub_filepath):
-                        # Extract the VobSub subtitle
-                        print(f"Extracting to {stub_name}")
-                        # mkvextract tracks "$input_file" "$idx:$output_file"
-                        cmd = [
-                            "mkvextract", "tracks",
-                            s_stream.filepath,
-                            f"{s_stream.idx}:{stub_name_with_dir}" ]
-                        if verbose:
-                            print(f"Running command: {cmd}")
-                        out = subprocess.run(cmd, capture_output=True)
-                        if out.returncode != 0:
-                            raise ValueError(f"Failed to extract VobSub subtitle stream: {out.stdout.decode('utf-8')} {out.stderr.decode('utf-8')}")
+                        if s_ext == '.idx' or s_ext == '.sub':
+                            # We have a direct vobsub filepath move them to the expected locations.
+                            s_stub = os.path.splitext(s_filename)[0]
+                            cur_idx_filepath = os.path.join(s_dirname, f"{s_stub}.idx")
+                            cur_sub_filepath = os.path.join(s_dirname, f"{s_stub}.sub")
+                            _ = shutil.copy(cur_idx_filepath, idx_filepath)
+                            _ = shutil.copy(cur_sub_filepath, sub_filepath)
+                        else:
+                            # Extract the VobSub subtitle
+                            print(f"Extracting to {stub_name}")
+                            # mkvextract tracks "$input_file" "$idx:$output_file"
+                            cmd = [
+                                "mkvextract", "tracks",
+                                s_stream.filepath,
+                                f"{s_stream.idx}:{stub_name_with_dir}" ]
+                            if verbose:
+                                print(f"Running command: {cmd}")
+                            out = subprocess.run(cmd, capture_output=True)
+                            if out.returncode != 0:
+                                raise ValueError(f"Failed to extract VobSub subtitle stream: {out.stdout.decode('utf-8')} {out.stderr.decode('utf-8')}")
                     # Convert to SRT
                     print(f"Converting to SRT")
                     # ./VobSub2SRT/bin/vobsub2srt subtitle
@@ -493,8 +505,7 @@ def main() -> None:
                     os.remove(idx_filepath)
                     os.remove(sub_filepath)
                     if not os.path.exists(srt_filepath):
-                        raise ValueError(f"Failed to convert VobSub subtitle to SRT: {srt_filename} does not exist.")
-                    #shutil.move(srt_filename, srt_filename_final)
+                        raise ValueError(f"Failed to convert VobSub subtitle to SRT: {srt_filepath} does not exist.")
                 # Add the new SRT file to the session
                 srt_cont = session.add_file(f"{srt_filepath}@@English")
                 # Set the subtitle stream properties
