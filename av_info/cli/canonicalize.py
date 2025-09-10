@@ -441,7 +441,7 @@ def main() -> None:
                     if not os.path.exists(srt_filepath):
                         raise ValueError(f"Failed to convert PGS subtitle to SRT: {srt_filename} does not exist.")
                 # Add the new SRT file to the session
-                srt_cont = session.add_file(srt_filepath)
+                srt_cont = session.add_file(f"{srt_filepath}@@English")
                 # Set the subtitle stream properties
                 f_stream_process(srt_cont.subtitle[0])
                 srt_cont.subtitle[0].language = s_stream.language
