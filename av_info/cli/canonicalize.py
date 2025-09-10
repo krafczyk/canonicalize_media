@@ -10,6 +10,14 @@ import os
 import sys
 import shutil
 from pprint import pprint
+import traceback
+
+
+def shell_excepthook(exc_type, exc_value, tb):
+    # print the usual traceback to stderr
+    traceback.print_exception(exc_type, exc_value, tb)
+    # exit with custom code
+    sys.exit(255)
 
 
 acceptable_subtitle_codecs = ['subrip', 'mov_text', 'ass', 'hdmv_pgs_subtitle', 'dvd_subtitle']
@@ -587,4 +595,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    sys.excepthook = shell_excepthook
     main()
