@@ -295,8 +295,15 @@ def guess_episode(
         series = results[0]
 
         if not season or not episode:
-            raise ValueError("Must provide season and episode when using series_uid.")
+            s_e_m = SEAS_EP_RE.search(path_str)
+            if not s_e_m:
+                raise ValueError("Unable to guess season/episode from the path.")
 
+            path_season, path_episode = s_e_m.groups()
+            if not season:
+                season=path_season
+            if not episode:
+                episode=path_episode
         result = provider.get_episode(
             series,
             season=season,
