@@ -407,36 +407,41 @@ def main() -> None:
             subtitle_map.append((s_stream, s_codec))
             if convert_subtitles and s_stream.language in ("eng", "en"):
                 # Convert PGS subtitles to SRT
-                s_filename = s_stream.filepath
-                srt_filename = f"{s_filename}.{conv_id}.srt"
-                if not os.path.exists(srt_filename):
-                    sup_filename = f"{s_filename}.{conv_id}.sup"
+                s_filename = os.path.basename(s_stream.filepath)
+                s_dirname = os.path.dirname(s_stream.filepath)
+                stub = safe_stub(os.path.splitext(s_filename)[0])
+                srt_filename = f"{stub}.{conv_id}.srt"
+                srt_filepath = os.path.join(s_dirname, srt_filename)
+                if not os.path.exists(srt_filepath):
+                    stub = safe_stub(os.path.splitext(s_filename)[0])
+                    sup_filename = f"{stub}.{conv_id}.sup"
+                    sup_filepath = os.path.join(s_dirname, sup_filename)
                     print(f"Encountered PGS subtitle stream [{s_stream.title}] ({s_stream.idx})...")
-                    if not os.path.exists(sup_filename):
+                    if not os.path.exists(sup_filepath):
                         # Extract the PGS subtitle
-                        print(f"Extracting to {sup_filename}")
+                        print(f"Extracting to {sup_filepath}")
                         sup_command = [
                             "ffmpeg", "-hide_banner",
                             "-i", s_stream.filepath,
                             "-map", f"0:{s_stream.idx}",
                             "-c:s", "copy",
-                            f"file:{sup_filename}"]
+                            f"file:{sup_filepath}"]
                         out = subprocess.run(sup_command, capture_output=True)
                         if out.returncode != 0:
                             raise ValueError(f"Failed to extract PGS subtitle stream: {out.stderr.decode('utf-8')}")
                     # Convert to SRT
                     print(f"Converting to SRT")
                     out = subprocess.run([
-                        "bash", "pgstosrt.sh", sup_filename
+                        "bash", "pgstosrt.sh", sup_filepath
                         ], capture_output=True)
                     if out.returncode != 0:
                         raise ValueError(f"Failed to convert PGS subtitle to SRT: {out.stderr.decode('utf-8')}")
                     # Remove the original SUP file
-                    os.remove(sup_filename)
-                    if not os.path.exists(srt_filename):
+                    os.remove(sup_filepath)
+                    if not os.path.exists(srt_filepath):
                         raise ValueError(f"Failed to convert PGS subtitle to SRT: {srt_filename} does not exist.")
                 # Add the new SRT file to the session
-                srt_cont = session.add_file(srt_filename)
+                srt_cont = session.add_file(srt_filepath)
                 # Set the subtitle stream properties
                 f_stream_process(srt_cont.subtitle[0])
                 srt_cont.subtitle[0].language = s_stream.language
@@ -448,21 +453,28 @@ def main() -> None:
             subtitle_map.append((s_stream, s_codec))
             if convert_subtitles and s_stream.language in ("eng", "en"):
                 # Convert VobSub subtitles to SRT
-                s_filename = s_stream.filepath
-                stub_name = f"{os.path.splitext(s_filename)[0]}_{conv_id}"
+                s_filename = os.path.basename(s_stream.filepath)
+                s_dirname = os.path.dirname(s_stream.filepath)
+                stub = safe_stub(os.path.splitext(s_filename)[0])
+                stub_name =  f"{stub}_{conv_id}"
+                stub_name_with_dir =  os.path.join(s_dirname, stub_name)
                 srt_filename_final = f"{stub_name}.srt"
-                if not os.path.exists(srt_filename_final):
+                srt_filename = f"{stub_name}.{conv_id}.srt"
+                srt_filepath = os.path.join(s_dirname, srt_filename)
+                if not os.path.exists(srt_filepath):
                     print(f"Encountered VobSub subtitle stream [{s_stream.title}] ({s_stream.idx})...")
                     idx_filename = f"{stub_name}.idx"
+                    idx_filepath = os.path.join(s_dirname, idx_filename)
                     sub_filename = f"{stub_name}.sub"
-                    if not os.path.exists(idx_filename) or not os.path.exists(sub_filename):
+                    sub_filepath = os.path.join(s_dirname, sub_filename)
+                    if not os.path.exists(idx_filepath) or not os.path.exists(sub_filepath):
                         # Extract the VobSub subtitle
                         print(f"Extracting to {stub_name}")
                         # mkvextract tracks "$input_file" "$idx:$output_file"
                         cmd = [
                             "mkvextract", "tracks",
                             s_stream.filepath,
-                            f"{s_stream.idx}:{stub_name}" ]
+                            f"{s_stream.idx}:{stub_name_with_dir}" ]
                         if verbose:
                             print(f"Running command: {cmd}")
                         out = subprocess.run(cmd, capture_output=True)
@@ -472,20 +484,20 @@ def main() -> None:
                     print(f"Converting to SRT")
                     # ./VobSub2SRT/bin/vobsub2srt subtitle
                     cmd = [
-                        "./VobSub2SRT/bin/vobsub2srt", stub_name ]
+                        "./VobSub2SRT/bin/vobsub2srt", stub_name_with_dir ]
                     if verbose:
                         print(f"Running command: {cmd}")
                     out = subprocess.run(cmd, capture_output=True)
                     if out.returncode != 0:
                         raise ValueError(f"Failed to convert VobSub subtitle to SRT: {out.stderr.decode('utf-8')}")
                     # Remove the original SUP file
-                    os.remove(idx_filename)
-                    os.remove(sub_filename)
-                    if not os.path.exists(srt_filename_final):
+                    os.remove(idx_filepath)
+                    os.remove(sub_filepath)
+                    if not os.path.exists(srt_filepath):
                         raise ValueError(f"Failed to convert VobSub subtitle to SRT: {srt_filename} does not exist.")
                     #shutil.move(srt_filename, srt_filename_final)
                 # Add the new SRT file to the session
-                srt_cont = session.add_file(f"{srt_filename_final}@@English")
+                srt_cont = session.add_file(f"{srt_filepath}@@English")
                 # Set the subtitle stream properties
                 srt_cont.subtitle[0].language = s_stream.language
                 srt_cont.subtitle[0].title = f"{s_stream.title} (OCR)"
