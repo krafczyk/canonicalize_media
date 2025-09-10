@@ -6,6 +6,7 @@ import langcodes
 from langcodes import Language, tag_is_valid
 from collections.abc import Sequence
 import unicodedata
+import hashlib
 
 
 def version_tuple(ver_str: str) -> tuple[int,...]:
@@ -221,3 +222,16 @@ def get_device() -> DeviceType:
 def die(message: str, exit_code: int=1):
     print(message, file=sys.stderr)
     sys.exit(exit_code)
+
+
+def safe_stub(pretty_name: str, prefix: str="vssrt_") -> str:
+    # 1) normalize unicode
+    name = unicodedata.normalize("NFKD", pretty_name)
+    # 2) strip weird characters (keep letters, numbers, dash/underscore/space)
+    name = re.sub(r"[^A-Za-z0-9\-_ ]+", " ", name)
+    # 3) collapse whitespace
+    name = re.sub(r"\s+", " ", name).strip()
+    # 4) slug (shorten) + stable hash so we can always map back
+    slug = "-".join(name.lower().split())[:40]
+    digest = hashlib.sha1(pretty_name.encode("utf-8")).hexdigest()[:8]
+    return f"{prefix}{slug}-{digest}"  # e.g., vssrt-father-son-jc-1a2b3c4d

@@ -1,6 +1,6 @@
 import argparse
 from av_info.session import BaseStream, VideoStream, SubtitleStream, Session
-from av_info.utils import version_tuple, ask_continue
+from av_info.utils import version_tuple, ask_continue, safe_stub
 from av_info.db import get_provider
 from av_info.plex import build_media_path, guess
 from typing import cast
