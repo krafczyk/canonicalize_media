@@ -184,6 +184,8 @@ def main() -> None:
     _ = parser.add_argument("--edition", "-e", help="Special 'editions' such as 'Extended'")
     _ = parser.add_argument("--yes", help="Don't prompt user for confirmation.", action="store_true")
     _ = parser.add_argument("--info", help="Activate info mode similar to calling ffprobe or mediainfo", action="store_true")
+    _ = parser.add_argument("--sort-subtitles-by-language", help="Sort the subtitles by language placing english first. Otherwise only sorts by codec priority", action='store_true')
+    _ = parser.add_argument("--sort-audio-by-language", help="Sort the audio streams by language placing english first. Otherwise only sorts by codec priority", action='store_true')
     _ = parser.add_argument("--convert-advanced-subtitles", help="Convert 'advanced' subtitle formats such as image based formats and .ass format.", action="store_true")
     _ = parser.add_argument("--copy-video", help="Copy the video stream. Skip Heuristic/Transcoding", action="store_true")
     _ = parser.add_argument("--metadata-provider", help="Metadat provider to use", default="omdb", type=str)
@@ -242,6 +244,8 @@ def main() -> None:
     episode: str | None = cast(str |None, args.episode)
     provider = get_provider(cast(str,args.metadata_provider))
     verbose: bool = cast(bool, args.verbose)
+    sort_subtitles_by_language: bool = cast(bool, args.sort_subtitles_by_language)
+    sort_audio_by_language: bool = cast(bool, args.sort_audio_by_language)
 
     if args_output is None:
         if uid is not None:
@@ -333,7 +337,10 @@ def main() -> None:
         output_args += [ "-c:v", "copy" ]
 
     # Sort audio streams english streams first, 5.1 first
-    audio_streams_sorted = sorted(session.audio_streams, key=lambda x: x.channels != 6)
+    if sort_audio_by_language:
+        audio_streams_sorted = sorted(session.audio_streams, key=lambda x: (x.language != "eng" and x.language != "en", x.channels != 6))
+    else:
+        audio_streams_sorted = sorted(session.audio_streams, key=lambda x: x.channels != 6)
 
     for a_stream in audio_streams_sorted:
         f_stream_process(a_stream)
@@ -545,9 +552,17 @@ def main() -> None:
     subtitle_map = list(map(sub_pass_2, subtitle_map))
 
     # Pass 4: Sort subtitle streams by codec priority
-    subtitle_streams_sorted = sorted(
-        subtitle_map,
-        key=lambda x: acceptable_subtitle_codecs.index(x[1]))
+    if sort_subtitles_by_language:
+        # We sort by language first, then codec priority. So English should
+        # be first if it exists, then the other languages in the order they
+        # originally had.
+        subtitle_streams_sorted = sorted(
+            subtitle_map,
+            key=lambda x: (x[0].language != "eng" and x[0].language != "en", acceptable_subtitle_codecs.index(x[1])))
+    else:
+        subtitle_streams_sorted = sorted(
+            subtitle_map,
+            key=lambda x: acceptable_subtitle_codecs.index(x[1]))
 
     s_idx = 0
     for s_stream, target_codec in subtitle_streams_sorted:
