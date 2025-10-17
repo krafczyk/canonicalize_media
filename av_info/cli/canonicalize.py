@@ -27,7 +27,7 @@ width_map: dict[str, tuple[int,...]] = {
     "480p": (640, 720),
     "720p": (1280,),
     "1080p": (1920, 1440, 1488),
-    "4K": (3840, 4096)
+    "4K": (3840, 3640, 4096)
 }
 
 
@@ -118,8 +118,8 @@ def build_video_codec_args(vid: VideoStream, target_res: str, force: bool=False)
 
         # Check that hdr files are using hevc
         if vid.bit_depth == 10:
-            if target_codec != "hevc":
-                raise ValueError("HDR files must be transcoded to HEVC.")
+            if target_codec[:4] != "hevc":
+                raise ValueError(f"HDR files must be transcoded to HEVC. target_codec: {target_codec}")
 
         # Set profile/level
         if target_codec == "h264":
