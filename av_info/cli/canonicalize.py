@@ -428,18 +428,17 @@ def main() -> None:
     else:
         output_args += build_video_codec_args(session.video_streams[0], res, force_res)
 
-    if len(session.video_streams) > 2:
-        raise  ValueError("Only up to two video streams are currently supported!")
+    if len(session.video_streams) > 1:
+        for i in range(1,len(session.video_streams)):
 
-    elif len(session.video_streams) > 1:
-        if session.video_streams[1].codec != "mjpeg":
-            raise ValueError("Second video stream must be MJPEG")
-        v_stream = session.video_streams[1]
-        f_stream_process(v_stream)
-        file_idx = get_f_idx(v_stream)
-        stream_id = v_stream.idx
-        output_args += [ "-map", f"{file_idx}:{stream_id}" ]
-        output_args += [ "-c:v", "copy" ]
+            if session.video_streams[i].codec != "mjpeg":
+                raise ValueError("Subsequent video streams must be MJPEG")
+            v_stream = session.video_streams[i]
+            f_stream_process(v_stream)
+            file_idx = get_f_idx(v_stream)
+            stream_id = v_stream.idx
+            output_args += [ "-map", f"{file_idx}:{stream_id}" ]
+            output_args += [ "-c:v", "copy" ]
 
     # Sort audio streams english streams first, 5.1 first
     if sort_audio_by_language:
