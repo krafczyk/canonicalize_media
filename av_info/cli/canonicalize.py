@@ -26,17 +26,35 @@ acceptable_subtitle_codecs = ['subrip', 'mov_text', 'ass', 'hdmv_pgs_subtitle', 
 width_map: dict[str, tuple[int,...]] = {
     "480p": (640, 720),
     "720p": (1280,),
-    "1080p": (1920, 1440, 1488),
+    "1080p": (1920, 1422, 1440, 1488),
     "4K": (3840, 3640, 4096)
 }
 
+height_map: dict[str, tuple[int,...]] = {
+    "480p": (480,),
+    "720p": (720,),
+    "1080p": (1080, 800),
+    "4K": (2160,)
+}
 
-def is_res_match(width: int, target_res_widths: tuple[int,...]) -> bool:
+
+def is_res_match_w(width: int, target_res_widths: tuple[int,...]) -> bool:
     """Compare the width of a video stream to the target resolution widths."""
     is_match: bool = False
     err: float = 0.01
     for t_width in target_res_widths:
         if (float(abs(width - t_width))/t_width) < err:
+            is_match = True
+            break
+    return is_match
+
+
+def is_res_match_h(height: int, target_res_heights: tuple[int,...]) -> bool:
+    """Compare the width of a video stream to the target resolution widths."""
+    is_match: bool = False
+    err: float = 0.01
+    for t_height in target_res_heights:
+        if (float(abs(height - t_height))/t_height) < err:
             is_match = True
             break
     return is_match
@@ -67,8 +85,8 @@ supported_codecs = [
 
 
 def build_video_codec_args(vid: VideoStream, target_res: str, force: bool=False) -> list[str]:
-    if not is_res_match(vid.width, width_map[target_res]) and not force:
-        raise ValueError(f"Video resolution {vid.width} doesn't match target resolution {target_res}.")
+    if not is_res_match_h(vid.height, height_map[target_res]) and not force:
+        raise ValueError(f"Video resolution {vid.height} doesn't match target resolution {target_res}.")
 
     # Check if we need to lower bitrate
     reduce_quality = False
@@ -220,8 +238,8 @@ def main() -> None:
         vid_width = session.video_streams[0].width
         vid_height = session.video_streams[0].height
         target_res: str|None = None
-        for res_name, widths in width_map.items():
-            if is_res_match(vid_width, widths):
+        for res_name, heights in height_map.items():
+            if is_res_match_h(vid_height, heights):
                 target_res = res_name
                 break
 
