@@ -63,7 +63,7 @@ def is_res_match_h(height: int, target_res_heights: tuple[int,...]) -> bool:
 max_bitrate_map: dict[str, int] = {
     "480p": 1500,
     "720p": 3000,
-    "1080p": 15000,
+    "1080p": 30000,
     "4K": 35000
 }
 
