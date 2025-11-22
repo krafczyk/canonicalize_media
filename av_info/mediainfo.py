@@ -149,13 +149,39 @@ class Text(BaseModel):
     Forced: str | None = None
 
 
+class Image(BaseModel):
+    kind: Literal["Image"] = Field(alias='@type')
+    typeorder: int | None = Field(None, alias="@typeorder")
+    StreamOrder: int | None = None
+    ID: int | None = None
+    UniqueID: str | None = None
+    Format: str
+    CodecID: str | None = None
+    Duration: float | None = None
+    Duration_Start: float | None = None
+    Duration_End: float | None = None
+    Compression_Mode: str | None = None
+    Events_Total: int | None = None
+    Events_MinDuration: float | None = None
+    Lines_Count: int | None = None
+    Lines_MaxCountPerEvent: int | None = None
+    BitRate: int | None = None
+    FrameRate: float | None = None
+    FrameCount: int | None = None
+    ElementCount: int | None = None
+    StreamSize: int | None = None
+    Language: str | None = None
+    Default: str | None = None
+    Forced: str | None = None
+
+
 class Menu(BaseModel):
     kind: Literal["Menu"] = Field(alias='@type')
     extra: dict[str,str] | None = None
 
 
 Track = Annotated[
-    General|Video|Audio|Text|Menu,
+    General|Video|Audio|Text|Menu|Image,
     Field(discriminator='kind')
 ]
 

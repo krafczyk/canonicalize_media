@@ -39,6 +39,18 @@ class EpisodeInfo(BaseInfo):
         return f"{self.series.fullname()} s{int(self.season):02d}e{int(self.episode):02d} - {self.title}"
 
 
+@dataclass
+class DoubleEpisodeInfo(BaseInfo):
+    series: SeriesInfo
+    season: str
+    episode1: str
+    episode2: str
+
+    @override
+    def fullname(self) -> str:
+        return f"{self.series.fullname()} s{int(self.season):02d}e{int(self.episode1):02d}-e{int(self.episode2)} - {self.title}"
+
+
 class MetadataProvider(ABC):
     @abstractmethod
     def search_movie(self, uid: str|None, title: str|None=None, year: str|None = None, verbose: bool=False) -> list[MovieInfo]:        ...

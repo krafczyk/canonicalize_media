@@ -1,7 +1,7 @@
 import re
 #import difflib
 from pathlib import Path
-from av_info.db import ProviderSpec, BaseInfo, MovieInfo, SeriesInfo, EpisodeInfo, get_provider
+from av_info.db import ProviderSpec, BaseInfo, MovieInfo, SeriesInfo, EpisodeInfo, DoubleEpisodeInfo, get_provider
 from av_info.utils import clean, clean_tokens, tokenize, titles_equal, sanitize_filename
 from av_info.utils import first_year as _first_year
 #from collections.abc import Sequence
@@ -111,6 +111,38 @@ def build_media_path(
         return season_dir / filename
 
     # ------------------------------------------------------------------ #
+    # Double Episode
+    # ------------------------------------------------------------------ #
+    if isinstance(media, DoubleEpisodeInfo):
+        series_title = clean(media.series.title)
+        first_year = _first_year(media.series.year)
+
+        season_num = int(media.season)
+        episode1_num = int(media.episode1)
+        episode2_num = int(media.episode2)
+        ep_title = clean(media.title)
+
+        show_name = Path(f"{series_title} ({first_year})")
+        season_dir = show_name / f"Season {season_num:02d}"
+
+        # ---- filename ----
+        fn_parts = [ str(show_name) , f"s{season_num:02d}e{episode1_num:02d}-e{episode2_num:02d}", ep_title ]
+
+        # Optional – order is important for Plex:
+        #  Title (Year) - 4K {edition-Director's Cut}.mkv
+        if resolution:
+            fn_parts.append(resolution)
+
+        # Edition *must* be inside curly braces with the prefix
+        if edition:
+            fn_parts.append(edition_part)
+
+        filename = " - ".join(fn_parts) + f".{ext.lstrip('.')}"
+        filename = sanitize_filename(filename)
+        return season_dir / filename
+
+
+    # ------------------------------------------------------------------ #
     # Unsupported / unknown
     # ------------------------------------------------------------------ #
     raise ValueError(f"Unsupported type: {media!r}")
@@ -121,6 +153,7 @@ def build_media_path(
 # ---------------------------------------------------------------------------
 IMDB_RE      = re.compile(r"tt\d{7,8}")
 SEAS_EP_RE   = re.compile(r"[Ss](\d{1,2})[Ee](\d{1,2})")       # s03e12 / S3E2 / s03e02 etc.
+DOUBLE_EP = re.compile(r"[Ss](\d{1,2})[Ee](\d{1,2})-[Ee](\d{1,2})")
 YEAR_RE      = re.compile(r"(19|20)\d{2}")
 YEAR_TOKEN   = re.compile(r"\(((19|20)\d{2})\)")
 
@@ -267,7 +300,7 @@ def guess_episode(
     episode: str | None = None,
     verbose: bool = False,
     provider: ProviderSpec = "omdb",
-) -> EpisodeInfo | None:
+) -> EpisodeInfo | list[EpisodeInfo] | None:
     """
     Try to resolve `path_str` to exactly one episode.
     Returns None on failure.
@@ -283,6 +316,61 @@ def guess_episode(
         imdb_id_m = IMDB_RE.search(path_str)
         uid = imdb_id_m.group(0) if imdb_id_m else None
 
+
+    def guess_episode_inner(
+            path_str: str,
+            *,
+            series: SeriesInfo,
+            season: str|None=None,
+            episode: str|None=None,
+            verbose:bool=verbose) -> EpisodeInfo | list[EpisodeInfo] | None:
+        s_2e_m = DOUBLE_EP.search(path_str)
+        s_e_m = SEAS_EP_RE.search(path_str)
+
+        if not s_e_m:
+            # No SxxEyy marker found, so we can't guess an episode
+            return None
+
+        path_season, path_episode = s_e_m.groups()
+        if not season:
+            season=path_season
+        if not episode:
+            episode=path_episode
+
+        # 2b. Query for the episode
+        ep = provider.get_episode(
+            series=series,
+            title=title,
+            year=year,
+            season=season,
+            episode=episode,
+            verbose=verbose,
+        )
+
+        if ep is None:
+            raise ValueError("Couldn't find an episode!")
+
+        if not s_2e_m:
+            return ep
+
+        path_season, _, path_episode2 = s_2e_m.groups()
+
+        # 2b. Query for the episode
+        ep2 = provider.get_episode(
+            series=series,
+            title=title,
+            year=year,
+            season=season,
+            episode=path_episode2,
+            verbose=verbose,
+        )
+
+        if ep2 is None:
+            raise ValueError("Couldn't find an episode!")
+
+        return [ep, ep2]
+
+
     if series_uid:
         # Use uid to get the series
         results = provider.search_series(
@@ -294,21 +382,13 @@ def guess_episode(
             raise ValueError(f"More than one series found for uid '{uid}'!")
         series = results[0]
 
-        if not season or not episode:
-            s_e_m = SEAS_EP_RE.search(path_str)
-            if not s_e_m:
-                raise ValueError("Unable to guess season/episode from the path.")
-
-            path_season, path_episode = s_e_m.groups()
-            if not season:
-                season=path_season
-            if not episode:
-                episode=path_episode
-        result = provider.get_episode(
-            series,
+        result = guess_episode_inner(
+            path_str,
+            series=series,
             season=season,
-            episode=episode
-        )
+            episode=episode,
+            verbose=verbose)
+
         if result is None:
             raise ValueError(f"No episode found for series {series.title} (uid: {series.uid})!")
         return result
@@ -336,32 +416,18 @@ def guess_episode(
             uid=uid,
             series=series,)
 
+    if not year:
+        year = _first_year(series.year)
+
     # -----------------------------------------------------------
     # 2. Detect episode markers (SxxEyy)
     # -----------------------------------------------------------
-    if not season or not episode:
-        s_e_m = SEAS_EP_RE.search(path_str)
-        if not s_e_m:
-            # No SxxEyy marker found, so we can't guess an episode
-            return None
-
-        path_season, path_episode = s_e_m.groups()
-        if not season:
-            season=path_season
-        if not episode:
-            episode=path_episode
-
-    if not year:
-        year = _first_year(series.year)
-    # 2b. Query for the episode
-    return provider.get_episode(
+    return guess_episode_inner(
+        path_str,
         series=series,
-        title=title,
-        year=year,
         season=season,
         episode=episode,
-        verbose=verbose,
-    )
+        verbose=verbose)
 
 
 def guess_movie(
@@ -548,7 +614,24 @@ def guess(
         verbose=verbose,
         provider=provider,
     )
-    if ep:
+    if type(ep) is list:
+        # We have a double episode.
+
+        title = ep[0].title
+        # Strip part identifiers like '(1) or (2)'
+        title = re.sub(r"\s*\(\d+\)\s*$", "", title)
+
+        double_ep = DoubleEpisodeInfo(
+            ep[0].uid, # Use first episode UID for now
+            title,
+            ep[0].year,
+            ep[0].series,
+            ep[0].season,
+            ep[0].episode,
+            ep[1].episode)
+        return double_ep
+
+    elif isinstance(ep, EpisodeInfo):
         return ep
 
     if episode_only:
