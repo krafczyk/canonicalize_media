@@ -1,5 +1,6 @@
 from av_info.mediainfo import mediainfo, MediaInfo, Video, Audio, Text, General
 from av_info.mediainfo import Menu as MIMenu
+from av_info.mediainfo import Image as MImage
 from av_info.ffmpeg import ffmpeg, FFmpegInfo, VideoStreamInfo, AudioStreamInfo, SubtitleStreamInfo
 from av_info.utils import guess_lang_from_filename
 from dataclasses import dataclass
@@ -100,10 +101,11 @@ class MediaInfoStreams(TypedDict):
     audio: list[Audio]
     subtitle: list[Text]
     menu: list[MIMenu]
+    image: list[MImage]
 
 
 def get_mediainfo_streams(mediainfo_data: MediaInfo) -> MediaInfoStreams:
-    streams: MediaInfoStreams = {'video': [], 'audio': [], 'subtitle': [], 'menu': []}
+    streams: MediaInfoStreams = {'video': [], 'audio': [], 'subtitle': [], 'menu': [], 'image': []}
     tracks = mediainfo_data.media.track
     for track in tracks[1:]:
         if isinstance(track, Video):
@@ -114,6 +116,8 @@ def get_mediainfo_streams(mediainfo_data: MediaInfo) -> MediaInfoStreams:
             streams['subtitle'].append(track)
         elif isinstance(track, MIMenu):
             streams['menu'].append(track)
+        elif isinstance(track, MImage):
+            streams['image'].append(track)
         else:
             raise RuntimeError(f"Unexpected track type: {type(track)}")
     if not isinstance(tracks[0], General):
