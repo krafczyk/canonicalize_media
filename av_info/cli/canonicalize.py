@@ -75,7 +75,7 @@ max_bitrate_map: dict[str, int] = {
 #HEVC UHD: Level 5.1 supported, seamless resolution change supported up to 3840x2160
 #HEVC: Supported only for MKV/MP4/TS containers
 
-supported_codecs = [
+supported_video_codecs = [
     "h264",
     "avc1", # another name for h264
     "AVC",
@@ -95,7 +95,7 @@ def build_video_codec_args(vid: VideoStream, target_res: str, force: bool=False)
 
     # Check if we need to change codec
     change_codec = False
-    if vid.codec not in supported_codecs:
+    if vid.codec not in supported_video_codecs:
         change_codec = True
 
     # If we don't need to change codec, check that the stream is using the right level
@@ -136,7 +136,7 @@ def build_video_codec_args(vid: VideoStream, target_res: str, force: bool=False)
 
         # Check that hdr files are using hevc
         if vid.bit_depth == 10:
-            if target_codec[:4] != "hevc":
+            if target_codec[:4].lower() != "hevc":
                 raise ValueError(f"HDR files must be transcoded to HEVC. target_codec: {target_codec}")
 
         # Set profile/level
