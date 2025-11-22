@@ -181,6 +181,93 @@ def build_video_codec_args(vid: VideoStream, target_res: str, force: bool=False)
         return transcode_options
 
 
+# What the TV accepts (passthrough okay). We treat E-AC-3 with Atmos specially below.
+supported_audio_codecs = {
+    "ac3",     # Dolby Digital
+    "eac3",    # Dolby Digital Plus (no Atmos/JOC)
+    "dts",     # DTS (ffmpeg often reports "dts"; encoder name is "dca")
+    "dca",     # DTS encoder/decoder name inside ffmpeg
+}
+
+def _is_atmos(aud) -> bool:
+    """
+    Try to detect Atmos/JOC. Works if your AudioStream exposes either:
+      - aud.is_atmos (bool) or
+      - aud.profile containing 'atmos' / 'joc'
+    """
+    prof = (getattr(aud, "profile", "") or "").lower()
+    return bool(getattr(aud, "is_atmos", False)) or "atmos" in prof or "joc" in prof
+
+def _is_dts_hd(aud) -> bool:
+    """
+    Detect DTS-HD (MA/HRA). ffprobe often sets codec='dts' and puts 'DTS-HD' in profile.
+    """
+    if aud.codec not in ("dts", "dca"):
+        return False
+    prof = (getattr(aud, "profile", "") or "").lower()
+    return "hd" in prof  # catches DTS-HD MA/HRA
+
+def _int_or_none(x):
+    try:
+        return int(x)
+    except Exception:
+        return None
+
+def build_audio_codec_args(aud, force: bool = False) -> list[str]:
+    """
+    Decide how to handle the audio stream:
+      - Prefer copy if codec is already supported and not Atmos.
+      - If E-AC-3 Atmos (JOC), strip Atmos core via bitstream filter.
+      - If DTS-HD, extract DTS core via bitstream filter.
+      - Otherwise, transcode to a widely-supported Dolby codec (AC-3 by default),
+        using the source bitrate if available (no extra caps).
+    Assumes aud has fields: codec (str), bit_rate (kb/s), channels (int), profile (str, optional).
+    """
+    codec = (aud.codec or "").lower()
+    bit_rate_k = _int_or_none(getattr(aud, "bit_rate", None))  # expected in kb/s like your video code
+    channels = _int_or_none(getattr(aud, "channels", None))
+
+    # Fast paths when not forcing a transcode
+    if not force:
+        # 1) E-AC-3 with Atmos/JOC: keep DD+ core without full re-encode
+        if codec == "eac3" and _is_atmos(aud):
+            print("Audio copy with filter: stripping Atmos (E-AC-3 JOC -> DD+ core).")
+            return ["-c:a", "copy", "-bsf:a", "eac3_core"]
+
+        # 2) DTS-HD MA/HRA: extract the DTS core
+        if _is_dts_hd(aud):
+            print("Audio copy with filter: extracting DTS core from DTS-HD.")
+            return ["-c:a", "copy", "-bsf:a", "dca_core"]
+
+        # 3) Already supported (plain AC-3 / E-AC-3 (non-Atmos) / DTS)
+        if codec in supported_audio_codecs and not _is_atmos(aud):
+            print("Audio can be copied without transcoding.")
+            return ["-c:a", "copy"]
+
+    # Otherwise, we need to transcode
+    print("Audio must be transcoded:")
+
+    # Choose a sensible default target:
+    # - AC-3 is the safest/common denominator.
+    # - If we see > 6 channels, prefer E-AC-3 (keeps 7.1 without downmix constraints).
+    # You said channel count doesn’t need to be restricted; this just picks a codec.
+    target_codec = "eac3" if (channels and channels > 6) else "ac3"
+
+    print(f"  Codec change needed. Source codec: {aud.codec}, target codec: {target_codec}")
+    if _is_atmos(aud):
+        print("  Reason: source contains Atmos which this TV doesn't support.")
+
+    transcode_options: list[str] = ["-c:a", target_codec]
+
+    # Use the source bitrate if available (no additional caps per your instruction).
+    # If bit_rate_k is None or invalid, omit -b:a and let encoder choose a default.
+    if bit_rate_k and bit_rate_k > 0:
+        transcode_options += ["-b:a", f"{bit_rate_k}k"]
+
+    # No channel restriction; ffmpeg will preserve channel layout unless otherwise told.
+
+    return transcode_options
+
 
 def main() -> None:
     from mk_ic import install
@@ -367,6 +454,7 @@ def main() -> None:
 
     # Specify audio encoder
     output_args += [ "-c:a", "copy" ]
+    #output_args += build_audio_codec_args(a_stream)
 
     convert_subtitles: bool = cast(bool, args.convert_advanced_subtitles)
 
