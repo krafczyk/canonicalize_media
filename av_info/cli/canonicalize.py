@@ -316,6 +316,7 @@ def main() -> None:
         raise ValueError("No video streams found.")
 
     args_res: str | None = cast(str | None, args.res)
+    copy_video: bool = cast(bool, args.copy_video)
     force_res: bool = False
     if args_res is not None:
         force_res = True
@@ -330,7 +331,7 @@ def main() -> None:
                 target_res = res_name
                 break
 
-        if target_res is None:
+        if target_res is None and not copy_video:
             raise ValueError(f"Video resolution {vid_width}x{vid_height} didn't match any known resolution")
         print(f"Video resolution {vid_width} matched target resolution {target_res}.")
         res = target_res
@@ -422,7 +423,6 @@ def main() -> None:
     output_args += [ "-map", f"{file_idx}:{stream_id}" ]
 
     # Specify video encoder
-    copy_video: bool = cast(bool, args.copy_video)
     if copy_video:
         output_args += [ "-c:v", "copy" ]
     else:
