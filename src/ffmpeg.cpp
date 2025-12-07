@@ -126,8 +126,11 @@ static PyObject* ffmpeg(PyObject* self, PyObject* input_file) {
             }
             if (!add_int_to_dict(stream_dict, "bit_rate", bit_rate)) return cleanup();
             if (!add_int_to_dict(stream_dict, "profile", codecpar->profile)) return cleanup();
-            if (!add_str_to_dict(stream_dict, "profile_name", avcodec_profile_name(codecpar->codec_id, codecpar->profile))) {
-                return cleanup();
+            auto profile_name = avcodec_profile_name(codecpar->codec_id, codecpar->profile);
+            if (profile_name != nullptr) {
+                if (!add_str_to_dict(stream_dict, "profile_name", profile_name)) {
+                    return cleanup();
+                }
             }
             if (!add_int_to_dict(stream_dict, "level", codecpar->level)) return cleanup();
             if (!add_int_to_dict(stream_dict, "width", codecpar->width)) return cleanup();
