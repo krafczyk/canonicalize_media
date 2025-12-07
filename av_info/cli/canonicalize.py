@@ -98,12 +98,14 @@ def build_video_codec_args(vid: VideoStream, target_res: str, force: bool=False)
     if vid.codec not in supported_video_codecs:
         change_codec = True
 
-    # If we don't need to change codec, check that the stream is using the right level
     change_level = False
-    max_level = "5.1" if target_res in ("4K", "1080p") else "4.1"
-    # Compare codec level using version number comparison
-    if version_tuple(vid.level) > version_tuple(max_level):
-        change_level = True
+    max_level = None
+    if not change_codec:
+        # If we don't need to change codec, check that the stream is using the right level
+        max_level = "5.1" if target_res in ("4K", "1080p") else "4.1"
+        # Compare codec level using version number comparison
+        if version_tuple(vid.level) > version_tuple(max_level):
+            change_level = True
 
     if not (reduce_quality or change_codec or change_level):
         print(f"Video can be copied without transcoding.")
@@ -115,8 +117,9 @@ def build_video_codec_args(vid: VideoStream, target_res: str, force: bool=False)
             print(f"  Quality reduction needed. Target bitrate: {max_bitrate_map[target_res]}k, Video bitrate: {vid.bit_rate}k")
         if change_codec:
             print(f"  Codec change needed. Video codec: {vid.codec}")
-        if change_level:
-            print(f"  Encoding level change needed. max level: {max_level}, Video level: {vid.level}")
+        else:
+            if change_level:
+                print(f"  Encoding level change needed. max level: {max_level}, Video level: {vid.level}")
 
         # Prefer hevc
         transcode_options: list[str] = []
