@@ -6,7 +6,6 @@ from av_info.utils import clean, clean_tokens, tokenize, titles_equal, sanitize_
 from av_info.utils import first_year as _first_year
 #from collections.abc import Sequence
 
-
 def build_media_path(
     media: BaseInfo,
     *,
